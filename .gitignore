@@ -1,0 +1,13 @@
+node_modules/
+.expo/
+.freebuff/
+dist/
+web-build/
+*.log
+.env
+.env.*
+
+# Build & runtime artifacts
+*.apk
+uploads/
+seven-*.png

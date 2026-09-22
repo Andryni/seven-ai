@@ -1,0 +1,94 @@
+{
+  "expo": {
+    "name": "SEVEN",
+    "slug": "seven-ai",
+    "version": "3.2.0",
+    "orientation": "portrait",
+    "icon": "./assets/icon.png",
+    "scheme": "seven",
+    "userInterfaceStyle": "dark",
+    "updates": {
+      "url": "https://u.expo.dev/51b1bce8-af2a-4a58-a495-58b182c05991"
+    },
+    "runtimeVersion": {
+      "policy": "fingerprint"
+    },
+    "ios": {
+      "supportsTablet": true,
+      "bundleIdentifier": "com.seven.ai",
+      "infoPlist": {
+        "NSAppTransportSecurity": {
+          "NSAllowsArbitraryLoads": false,
+          "NSExceptionDomains": {
+            "localhost": {
+              "NSExceptionAllowsInsecureHTTPLoads": true
+            }
+          }
+        },
+        "NSSpeechRecognitionUsageDescription": "Allow SEVEN to securely recognize your speech for hands-free commands.",
+        "NSMicrophoneUsageDescription": "Allow SEVEN to use the microphone for voice commands and the \"Hey Seven\" wake word."
+      }
+    },
+    "android": {
+      "adaptiveIcon": {
+        "foregroundImage": "./assets/adaptive-icon.png",
+        "backgroundColor": "#050508"
+      },
+      "package": "com.seven.ai",
+      "permissions": [
+        "INTERNET",
+        "ACCESS_NETWORK_STATE",
+        "RECORD_AUDIO",
+        "android.permission.RECORD_AUDIO",
+        "android.permission.MODIFY_AUDIO_SETTINGS",
+        "android.permission.FOREGROUND_SERVICE",
+        "android.permission.FOREGROUND_SERVICE_MEDIA_PLAYBACK",
+        "INTERNET",
+        "ACCESS_NETWORK_STATE",
+        "RECORD_AUDIO",
+        "android.permission.RECORD_AUDIO",
+        "android.permission.MODIFY_AUDIO_SETTINGS",
+        "android.permission.FOREGROUND_SERVICE",
+        "android.permission.FOREGROUND_SERVICE_MEDIA_PLAYBACK"
+      ]
+    },
+    "web": {
+      "favicon": "./assets/favicon.png",
+      "bundler": "metro"
+    },
+    "plugins": [
+      "expo-router",
+      "expo-secure-store",
+      [
+        "expo-splash-screen",
+        {
+          "image": "./assets/splash-icon.png",
+          "imageWidth": 200,
+          "resizeMode": "contain",
+          "backgroundColor": "#050508"
+        }
+      ],
+      [
+        "expo-speech-recognition",
+        {
+          "microphonePermission": "Allow SEVEN to use the microphone for voice commands and the \"Hey Seven\" wake word.",
+          "speechRecognitionPermission": "Allow SEVEN to securely recognize your speech for hands-free commands."
+        }
+      ],
+      [
+        "expo-audio",
+        {
+          "microphonePermission": "Allow SEVEN to use the microphone for voice commands and the \"Hey Seven\" wake word."
+        }
+      ]
+    ],
+    "extra": {
+      "eas": {
+        "projectId": "51b1bce8-af2a-4a58-a495-58b182c05991"
+      },
+      "expoConfig": {},
+      "router": {}
+    },
+    "owner": "sevenkely"
+  }
+}

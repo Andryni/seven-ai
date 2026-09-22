@@ -1,0 +1,556 @@
+import React, { useState, useEffect } from 'react';
+import { FONT } from '../src/theme/typography';
+import {
+  View,
+  Text,
+  TextInput,
+  TouchableOpacity,
+  ScrollView,
+} from 'react-native';
+import { useRouter } from 'expo-router';
+import { useSevenStore } from '../src/store/useSevenStore';
+import { ParticleBackground } from '../src/components/ParticleBackground';
+import { HudHeader } from '../src/components/HudHeader';
+import { TerminalLog } from '../src/components/TerminalLog';
+import { ScreenReveal } from '../src/components/ScreenReveal';
+import { BottomNav } from '../src/components/BottomNav';
+import { WebViewPreview } from '../src/components/WebViewPreview';
+import { SelfHealingModal } from '../src/components/SelfHealingModal';
+import { CodeEditorModal } from '../src/components/CodeEditorModal';
+import { ProjectManagerModal } from '../src/components/ProjectManagerModal';
+import { daveAgent } from '../src/core/daveAgent';
+import { selfHealing } from '../src/core/selfHealing';
+import { soundFx } from '../src/services/soundFxService';
+import { haptics } from '../src/services/hapticsService';
+import { useTheme, useThemeStyles } from '../src/theme/theme';
+import type { Palette } from '../src/theme/theme';
+import { t } from '../src/theme/i18n';
+import {
+  Code2,
+  Play,
+  ChevronLeft,
+  Sparkles,
+  Layers,
+  ShieldAlert,
+  Edit3,
+  Wand2,
+} from 'lucide-react-native';
+
+const PRESET_PROMPTS = [
+  'make a good developer portfolio website',
+  'build a modern AI Agent SaaS landing page with dark mode and pricing',
+  'create a high-tech robotics telemetry dashboard with live gauges',
+  'build a retro arcade mini-game in pure HTML canvas with neon laser mechanics',
+];
+
+export default function DaveAgentScreen() {
+  const router = useRouter();
+  const config = useSevenStore((s) => s.config);
+  const daveProjects = useSevenStore((s) => s.daveProjects);
+  const activeDaveProject = useSevenStore((s) => s.activeDaveProject);
+  const setActiveDaveProject = useSevenStore((s) => s.setActiveDaveProject);
+  const addDaveProject = useSevenStore((s) => s.addDaveProject);
+  const addTerminalLog = useSevenStore((s) => s.addTerminalLog);
+
+  const palette = useTheme();
+  const styles = useThemeStyles(daveStyles);
+  const lang = config.language ?? 'en';
+
+  const [prompt, setPrompt] = useState('make a good developer portfolio website');
+  const [refineText, setRefineText] = useState('');
+  const [isSynthesizing, setIsSynthesizing] = useState(false);
+  const [isRefining, setIsRefining] = useState(false);
+  const [showSelfHealingModal, setShowSelfHealingModal] = useState(false);
+  const [showCodeEditor, setShowCodeEditor] = useState(false);
+  const [showTemplateHub, setShowTemplateHub] = useState(false);
+
+  const currentProject = activeDaveProject || (daveProjects.length > 0 ? daveProjects[0] : null);
+
+  const handleSynthesize = async (overridePrompt?: string) => {
+    const activePrompt = overridePrompt || prompt;
+    if (!activePrompt.trim() || isSynthesizing) return;
+
+    haptics.light();
+    soundFx.playActivationChime();
+    setIsSynthesizing(true);
+    try {
+      // No forced name: Dave derives a unique name from the prompt, so new
+      // builds no longer overwrite previous ones.
+      const proj = await daveAgent.buildProject(activePrompt);
+      setActiveDaveProject(proj);
+      soundFx.playTelemetryPing();
+      haptics.success();
+    } catch (e: any) {
+      haptics.error();
+      addTerminalLog(`Dave Synthesis Error: ${e?.message || e}`, 'error');
+    } finally {
+      setIsSynthesizing(false);
+    }
+  };
+
+  // If no projects exist, generate initial project on load.
+  // Deferred to a macrotask so the effect body stays render-safe
+  // (declared after handleSynthesize so the reference is always valid).
+  useEffect(() => {
+    if (daveProjects.length === 0) {
+      const id = setTimeout(() => handleSynthesize('make a good developer portfolio website'), 0);
+      return () => clearTimeout(id);
+    }
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, []);
+
+  const handleRefine = async () => {
+    if (!refineText.trim() || isRefining || !currentProject) return;
+    haptics.medium();
+    setIsRefining(true);
+    try {
+      const refined = await daveAgent.refineProject(currentProject, refineText.trim());
+      setActiveDaveProject(refined);
+      setRefineText('');
+      haptics.success();
+    } catch (e: any) {
+      haptics.error();
+      addTerminalLog(`Refine Error: ${e?.message || e}`, 'error');
+    } finally {
+      setIsRefining(false);
+    }
+  };
+
+  const handleSimulateBug = async () => {
+    setShowSelfHealingModal(true);
+    await selfHealing.simulateBugAndAutoFix();
+  };
+
+  const handleSaveCode = (updatedFiles: { 'index.html': string; 'style.css': string; 'script.js': string }) => {
+    if (currentProject) {
+      const updated = {
+        ...currentProject,
+        files: updatedFiles,
+        previewHtml: updatedFiles['index.html'],
+      };
+      addDaveProject(updated);
+      setActiveDaveProject(updated);
+      addTerminalLog(`HOT-RELOAD: Updated ${currentProject.name} source code live.`, 'success');
+    }
+  };
+
+  return (
+    <ParticleBackground>
+      <HudHeader />
+
+      {/* Screen Sub-Header */}
+      <ScreenReveal index={0}>
+      <View style={styles.topNav}>
+        <TouchableOpacity style={styles.backBtn} onPress={() => router.push('/')}>
+          <ChevronLeft size={16} color={palette.accent} />
+          <Text style={styles.backBtnText}>DASHBOARD</Text>
+        </TouchableOpacity>
+
+        <View style={styles.titleWrap}>
+          <Code2 size={15} color={palette.info} />
+          <Text style={styles.titleText}>{t('dave.title', lang)}</Text>
+        </View>
+
+        <View style={styles.topNavRight}>
+          <TouchableOpacity
+            style={styles.templateBtn}
+            onPress={() => {
+              haptics.light();
+              setShowTemplateHub(true);
+            }}
+          >
+            <Layers size={13} color={palette.info} />
+            <Text style={styles.templateBtnText}>TEMPLATES</Text>
+          </TouchableOpacity>
+
+          <TouchableOpacity
+            style={styles.antiPanicBtn}
+            onPress={() => setShowSelfHealingModal(true)}
+          >
+            <ShieldAlert size={13} color={palette.error} />
+            <Text style={styles.antiPanicText}>AST</Text>
+          </TouchableOpacity>
+        </View>
+      </View>
+      </ScreenReveal>
+
+      <ScrollView style={styles.scrollArea} contentContainerStyle={styles.scrollContent}>
+        {/* Prompt Input Deck */}
+        <ScreenReveal index={1}>
+        <View style={styles.promptDeck}>
+          <View style={styles.promptLabelRow}>
+            <Sparkles size={13} color={palette.info} />
+            <Text style={styles.promptLabel}>{t('dave.prompt', lang)}</Text>
+          </View>
+
+          <View style={styles.inputRow}>
+            <TextInput
+              style={styles.textInput}
+              value={prompt}
+              onChangeText={setPrompt}
+              placeholder="e.g. make a good developer portfolio website"
+              placeholderTextColor={palette.textFaint}
+            />
+            <TouchableOpacity
+              style={[styles.synthesizeBtn, isSynthesizing && styles.btnLoading]}
+              onPress={() => handleSynthesize()}
+              disabled={isSynthesizing}
+            >
+              <Play size={14} color={palette.bgDeep} />
+              <Text style={styles.synthesizeText}>
+                {isSynthesizing ? 'BUILDING...' : t('dave.build', lang)}
+              </Text>
+            </TouchableOpacity>
+          </View>
+
+          {/* Preset Prompts */}
+          <ScrollView
+            horizontal
+            showsHorizontalScrollIndicator={false}
+            style={styles.presetsScroll}
+            contentContainerStyle={styles.presetsContainer}
+          >
+            {PRESET_PROMPTS.map((p, i) => (
+              <TouchableOpacity
+                key={i}
+                style={styles.presetChip}
+                onPress={() => {
+                  setPrompt(p);
+                  handleSynthesize(p);
+                }}
+              >
+                <Text style={styles.presetChipText}>{p}</Text>
+              </TouchableOpacity>
+            ))}
+          </ScrollView>
+
+          {/* Iterative refinement (only meaningful with an active project) */}
+          {currentProject && (
+            <View style={styles.refineSection}>
+              <View style={styles.promptLabelRow}>
+                <Wand2 size={13} color={palette.accent} />
+                <Text style={styles.refineLabel}>
+                  {t('dave.iteration', lang)} — {currentProject.name}
+                </Text>
+              </View>
+              <View style={styles.inputRow}>
+                <TextInput
+                  style={styles.textInput}
+                  value={refineText}
+                  onChangeText={setRefineText}
+                  placeholder={t('dave.refinePlaceholder', lang)}
+                  placeholderTextColor={palette.textFaint}
+                  onSubmitEditing={handleRefine}
+                  returnKeyType="send"
+                />
+                <TouchableOpacity
+                  style={[styles.refineBtn, (isRefining || !refineText.trim()) && styles.btnLoading]}
+                  onPress={handleRefine}
+                  disabled={isRefining || !refineText.trim()}
+                >
+                  <Wand2 size={13} color={palette.bgDeep} />
+                  <Text style={styles.refineBtnText}>
+                    {isRefining ? 'APPLYING...' : t('dave.refine', lang)}
+                  </Text>
+                </TouchableOpacity>
+              </View>
+            </View>
+          )}
+        </View>
+        </ScreenReveal>
+
+        {/* Live Terminal Log Component */}
+        <ScreenReveal index={2}>
+          <TerminalLog maxHeight={150} title="SEVEN_OS // DAVE_AGENT.SYNTHESIZER" />
+        </ScreenReveal>
+
+        {/* Live WebView Preview + Code Inspector */}
+        {currentProject && (
+          <ScreenReveal index={3}>
+          <View style={styles.previewSection}>
+            <View style={styles.previewHeader}>
+              <View style={styles.previewTitleLeft}>
+                <Layers size={14} color={palette.accent} />
+                <Text style={styles.previewTitleText}>
+                  LIVE ARTIFACT: {currentProject.name.toUpperCase()}
+                </Text>
+              </View>
+
+              <TouchableOpacity
+                style={styles.editCodeBtn}
+                onPress={() => {
+                  haptics.light();
+                  setShowCodeEditor(true);
+                }}
+              >
+                <Edit3 size={12} color={palette.bgDeep} />
+                <Text style={styles.editCodeBtnText}>EDIT CODE</Text>
+              </TouchableOpacity>
+            </View>
+
+            <WebViewPreview
+              project={currentProject}
+              onTriggerBug={handleSimulateBug}
+            />
+          </View>
+          </ScreenReveal>
+        )}
+      </ScrollView>
+
+      {/* Code Editor Modal */}
+      {currentProject && (
+        <CodeEditorModal
+          visible={showCodeEditor}
+          project={currentProject}
+          onClose={() => setShowCodeEditor(false)}
+          onSave={handleSaveCode}
+        />
+      )}
+
+      {/* Template Hub Modal */}
+      <ProjectManagerModal
+        visible={showTemplateHub}
+        onClose={() => setShowTemplateHub(false)}
+        onSelectTemplate={(name, tPrompt) => {
+          setPrompt(tPrompt);
+          handleSynthesize(tPrompt);
+        }}
+      />
+
+      {/* Self-Healing / Anti-Panic Modal */}
+      <SelfHealingModal
+        visible={showSelfHealingModal}
+        onClose={() => setShowSelfHealingModal(false)}
+        onSimulateBug={async () => {
+          await selfHealing.simulateBugAndAutoFix();
+        }}
+      />
+
+      <BottomNav active="dave" />
+    </ParticleBackground>
+  );
+}
+
+const daveStyles = (t: Palette) =>
+  ({
+    topNav: {
+      flexDirection: 'row',
+      alignItems: 'center',
+      justifyContent: 'space-between',
+      paddingHorizontal: 12,
+      paddingVertical: 8,
+      backgroundColor: t.bgDeep,
+      borderBottomWidth: 1,
+      borderBottomColor: t.border,
+    },
+    backBtn: {
+      flexDirection: 'row',
+      alignItems: 'center',
+      gap: 3,
+    },
+    backBtnText: {
+      fontFamily: FONT.mono,
+      color: t.accent,
+      fontSize: 9.5,
+      fontWeight: '700',
+    },
+    titleWrap: {
+      flexDirection: 'row',
+      alignItems: 'center',
+      gap: 6,
+    },
+    titleText: {
+      fontFamily: FONT.mono,
+      color: t.text,
+      fontSize: 11,
+      fontWeight: '800',
+      letterSpacing: 1,
+    },
+    topNavRight: {
+      flexDirection: 'row',
+      alignItems: 'center',
+      gap: 6,
+    },
+    templateBtn: {
+      flexDirection: 'row',
+      alignItems: 'center',
+      backgroundColor: t.accentSoft,
+      borderWidth: 1,
+      borderColor: t.info,
+      paddingHorizontal: 6,
+      paddingVertical: 3,
+      borderRadius: 4,
+      gap: 4,
+    },
+    templateBtnText: {
+      fontFamily: FONT.mono,
+      color: t.info,
+      fontSize: 8.5,
+      fontWeight: '800',
+    },
+    antiPanicBtn: {
+      flexDirection: 'row',
+      alignItems: 'center',
+      backgroundColor: t.accentSoft,
+      borderWidth: 1,
+      borderColor: t.error,
+      paddingHorizontal: 6,
+      paddingVertical: 3,
+      borderRadius: 4,
+      gap: 4,
+    },
+    antiPanicText: {
+      fontFamily: FONT.mono,
+      color: t.error,
+      fontSize: 8.5,
+      fontWeight: '800',
+    },
+    scrollArea: {
+      flex: 1,
+    },
+    scrollContent: {
+      paddingHorizontal: 12,
+      paddingTop: 12,
+      paddingBottom: 40,
+    },
+    promptDeck: {
+      backgroundColor: t.bgElevated,
+      borderRadius: 8,
+      borderWidth: 1,
+      borderColor: t.border,
+      padding: 12,
+      marginBottom: 10,
+    },
+    promptLabelRow: {
+      flexDirection: 'row',
+      alignItems: 'center',
+      gap: 6,
+      marginBottom: 8,
+    },
+    promptLabel: {
+      fontFamily: FONT.mono,
+      color: t.info,
+      fontSize: 10,
+      fontWeight: '800',
+      letterSpacing: 1,
+    },
+    refineLabel: {
+      fontFamily: FONT.mono,
+      color: t.accent,
+      fontSize: 10,
+      fontWeight: '800',
+      letterSpacing: 0.5,
+      flex: 1,
+    },
+    refineSection: {
+      marginTop: 14,
+      paddingTop: 10,
+      borderTopWidth: 1,
+      borderTopColor: t.border,
+    },
+    inputRow: {
+      flexDirection: 'row',
+      gap: 8,
+    },
+    textInput: {
+      flex: 1,
+      backgroundColor: t.bgDeep,
+      borderWidth: 1,
+      borderColor: t.border,
+      borderRadius: 4,
+      paddingHorizontal: 10,
+      paddingVertical: 8,
+      color: t.text,
+      fontFamily: FONT.mono,
+      fontSize: 11.5,
+    },
+    synthesizeBtn: {
+      flexDirection: 'row',
+      alignItems: 'center',
+      backgroundColor: t.info,
+      paddingHorizontal: 14,
+      borderRadius: 4,
+      gap: 6,
+    },
+    btnLoading: {
+      opacity: 0.6,
+    },
+    synthesizeText: {
+      fontFamily: FONT.mono,
+      color: t.bgDeep,
+      fontSize: 10.5,
+      fontWeight: '900',
+      letterSpacing: 1,
+    },
+    refineBtn: {
+      flexDirection: 'row',
+      alignItems: 'center',
+      backgroundColor: t.accent,
+      paddingHorizontal: 12,
+      borderRadius: 4,
+      gap: 5,
+    },
+    refineBtnText: {
+      fontFamily: FONT.mono,
+      color: t.bgDeep,
+      fontSize: 10,
+      fontWeight: '900',
+      letterSpacing: 0.5,
+    },
+    presetsScroll: {
+      marginTop: 10,
+    },
+    presetsContainer: {
+      gap: 6,
+    },
+    presetChip: {
+      backgroundColor: t.accentSoft,
+      borderWidth: 1,
+      borderColor: t.border,
+      paddingHorizontal: 8,
+      paddingVertical: 4,
+      borderRadius: 3,
+    },
+    presetChipText: {
+      fontFamily: FONT.mono,
+      color: t.textDim,
+      fontSize: 9.5,
+    },
+    previewSection: {
+      marginTop: 10,
+    },
+    previewHeader: {
+      flexDirection: 'row',
+      justifyContent: 'space-between',
+      alignItems: 'center',
+      marginBottom: 6,
+      paddingHorizontal: 2,
+    },
+    previewTitleLeft: {
+      flexDirection: 'row',
+      alignItems: 'center',
+      gap: 6,
+    },
+    previewTitleText: {
+      fontFamily: FONT.mono,
+      color: t.accent,
+      fontSize: 10.5,
+      fontWeight: '800',
+      letterSpacing: 0.5,
+    },
+    editCodeBtn: {
+      flexDirection: 'row',
+      alignItems: 'center',
+      backgroundColor: t.success,
+      paddingHorizontal: 8,
+      paddingVertical: 4,
+      borderRadius: 3,
+      gap: 4,
+    },
+    editCodeBtnText: {
+      fontFamily: FONT.mono,
+      color: t.bgDeep,
+      fontSize: 9,
+      fontWeight: '900',
+    },
+  } as const);

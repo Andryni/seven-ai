@@ -1,0 +1,13 @@
+appId: com.ultron.brahmaecho
+---
+# Smoke test: app boots to dashboard, core UI is present, chat opens.
+- launchApp
+- assertVisible: "DASHBOARD"
+- assertVisible:
+    id: ".*"
+    index: 0
+# Open the chat screen
+- tapOn: "CHAT"
+- assertVisible: "BRAHMA CHAT"
+# Navigate back
+- back
