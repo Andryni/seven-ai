@@ -1,0 +1,55 @@
+appId: com.seven.ai
+---
+# App lock — full cycle: enable the lock, bring the app back from the
+# background and prove it gates the UI, unlock, then turn the lock back off.
+#
+# ⚠ NOT part of the default suite. It needs a device with a biometric enrolled
+# and an authentication step that Maestro cannot perform for the user:
+#
+#   • emulator — start this flow, then in another terminal simulate the
+#     fingerprint when the prompt appears:
+#         adb -e emu finger touch 1
+#   • physical device — start the flow and authenticate on the phone when
+#     prompted (tap UNLOCK, then unlock with your fingerprint/face/passcode).
+#
+# If the device has nothing enrolled the flow stops at the availability check
+# instead of pretending to test the gate. It restores the setting at the end,
+# so it is safe to re-run; if it is aborted mid-way, disable APP LOCK manually.
+- launchApp
+
+# Dashboard → Settings
+- tapOn: "SETTINGS|RÉGLAGES"
+- scrollUntilVisible:
+    element:
+      text: "Enable app lock|Activer le verrouillage de l'appli"
+    direction: DOWN
+
+# Requires an enrolled method: the switch is disabled without one, and tapping a
+# disabled switch would leave the flow asserting a lock that cannot exist.
+- assertVisible: "Require .* to open SEVEN.*|Exige .* pour ouvrir SEVEN.*"
+
+# Enable it
+- tapOn: "Enable app lock|Activer le verrouillage de l'appli"
+
+# Backgrounding and returning must gate the UI
+- stopApp
+- launchApp
+- assertVisible: "SEVEN LOCKED|SEVEN VERROUILLÉ"
+- assertVisible: "Authenticate to continue|Authentifiez-vous pour continuer"
+
+# Authenticate (emulator: `adb -e emu finger touch 1`)
+- tapOn: "UNLOCK|DÉVERROUILLER"
+
+# Back inside the app...
+- assertVisible: "SYSTEMS NOMINAL|SYSTÈMES NOMINAUX"
+
+# ...and turn the lock off again so the device is left as it was found.
+- tapOn: "SETTINGS|RÉGLAGES"
+- scrollUntilVisible:
+    element:
+      text: "Enable app lock|Activer le verrouillage de l'appli"
+    direction: DOWN
+- tapOn: "Enable app lock|Activer le verrouillage de l'appli"
+- stopApp
+- launchApp
+- assertNotVisible: "SEVEN LOCKED|SEVEN VERROUILLÉ"

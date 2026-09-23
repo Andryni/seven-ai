@@ -1,0 +1,46 @@
+appId: com.seven.ai
+---
+# Long-term memory: remember a fact from the dedicated screen, find it through
+# search, then delete it (confirm dialog included) so the flow is repeatable and
+# leaves no test data behind.
+#
+# Assumes a configured install (see dashboard-smoke.yaml). Text matchers are
+# bilingual regexes. The delete step runs while the search box filters down to
+# the test fact, so a real memory can never be the one that gets deleted.
+- launchApp
+
+# Dashboard → Memory
+- scrollUntilVisible:
+    element:
+      text: "MEMORY|MÉMOIRE"
+    direction: DOWN
+- tapOn: "MEMORY|MÉMOIRE"
+- assertVisible: "LONG-TERM MEMORY|MÉMOIRE LONGUE DURÉE"
+
+# Add a fact
+- tapOn: "REMEMBER A FACT|MÉMORISER UN FAIT"
+- tapOn: "e\\.g\\. I prefer concise answers.*|Ex : je préfère les réponses concises.*"
+- inputText: "E2E memory fact"
+- tapOn: "PROJECT|PROJET"
+- tapOn: "SAVE|ENREGISTRER"
+- assertVisible: "E2E memory fact"
+
+# Search isolates it
+- tapOn: "Search memories\\.\\.\\.|Rechercher des souvenirs\\.\\.\\."
+- inputText: "E2E memory"
+- assertVisible: "E2E memory fact"
+- assertNotVisible: "Nothing remembered yet.*|Aucun souvenir"
+
+# A query with no match must say so instead of silently showing everything
+- eraseText
+- inputText: "zzz-no-such-memory"
+- assertVisible: "No memory matches your search\\.|Aucun souvenir ne correspond à votre recherche\\."
+- assertNotVisible: "E2E memory fact"
+
+# Back to the test fact — it is now the only card on screen — and delete it
+- eraseText
+- inputText: "E2E memory"
+- assertVisible: "E2E memory fact"
+- tapOn: "Delete memory|Supprimer le souvenir"
+- tapOn: "DELETE|SUPPRIMER"
+- assertNotVisible: "E2E memory fact"

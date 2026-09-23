@@ -1,0 +1,34 @@
+appId: com.seven.ai
+---
+# App lock — settings surface.
+#
+# This flow stays non-destructive on purpose: it asserts that the settings row
+# either describes a working method or states *why* it cannot be used ("no
+# fingerprint, face, or passcode enrolled"), which is the honest-failure
+# behaviour the feature promises — instead of silently ignoring the tap.
+#
+# The full lock → authenticate → unlock cycle needs a biometric prompt that
+# Maestro cannot answer, so it lives in app-lock-cycle.yaml (opt-in).
+#
+# Assumes a configured install (see dashboard-smoke.yaml). Text matchers are
+# bilingual regexes.
+- launchApp
+
+# Dashboard → Settings
+- tapOn: "SETTINGS|RÉGLAGES"
+- scrollUntilVisible:
+    element:
+      text: "APP LOCK|VERROUILLAGE DE L'APPLI"
+    direction: DOWN
+- assertVisible: "APP LOCK|VERROUILLAGE DE L'APPLI"
+
+# The switch is labelled for screen readers (and for this test)
+- assertVisible: "Enable app lock|Activer le verrouillage de l'appli"
+
+# Either a real method is offered, or the reason it is unavailable is spelled
+# out. Both branches are legitimate; a blank hint is not.
+- assertVisible: "Require .* to open SEVEN.*|No fingerprint, face, or passcode.*|Exige .* pour ouvrir SEVEN.*|Aucune empreinte, visage ou code.*"
+
+# Leave the toggle untouched, and the app unlocked
+- tapOn: "DASHBOARD|TABLEAU"
+- assertVisible: "SYSTEMS NOMINAL|SYSTÈMES NOMINAUX"

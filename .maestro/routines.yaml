@@ -1,0 +1,63 @@
+appId: com.seven.ai
+---
+# Routines: create a *conditional* routine (low battery + reminder) through the
+# UI, check the card states the real condition instead of a bare "daily at
+# undefined", confirm it survives leaving and re-entering the screen, then
+# delete it so the flow leaves the device exactly as it found it.
+#
+# Assumes a configured install (see dashboard-smoke.yaml). Text matchers are
+# bilingual regexes. The notification-permission dialog is dismissed
+# optionally: on a device that already granted it, nothing appears.
+- launchApp
+
+# Dashboard → Routines
+- scrollUntilVisible:
+    element:
+      text: "ROUTINES"
+    direction: DOWN
+- tapOn: "ROUTINES"
+- assertVisible: "AUTOMATION ROUTINES|ROUTINES D'AUTOMATISATION"
+
+# New routine
+- tapOn: "NEW ROUTINE|NOUVELLE ROUTINE"
+- assertVisible: "WHEN|QUAND"
+
+# Name it (placeholder doubles as the tap target)
+- tapOn: "Routine name.*|Nom de la routine.*"
+- inputText: "E2E low battery reminder"
+
+# Conditional trigger instead of a time one — the case that used to render
+# "daily at undefined:undefined" in the assistant's tool output.
+- tapOn: "LOW BATTERY|BATTERIE FAIBLE"
+- assertVisible: "FIRE AT OR BELOW|SE DÉCLENCHE À OU EN DESSOUS DE"
+- tapOn: "20%"
+
+# Action + its payload
+- tapOn: "REMINDER|RAPPEL"
+- tapOn: "What should the reminder say\\?|Que doit dire le rappel \\?"
+- inputText: "E2E battery reminder"
+
+# Save (Android 13+ may ask for the notification permission first)
+- tapOn: "SAVE ROUTINE|ENREGISTRER LA ROUTINE"
+- tapOn:
+    text: "Allow|Autoriser|ALLOW|AUTORISER"
+    optional: true
+
+# The card must describe the actual condition and keep the name
+- assertVisible: "E2E low battery reminder"
+- assertVisible: "When battery drops to 20% or below|Quand la batterie descend à 20% ou moins"
+
+# Persistence: leaving and coming back must still show it (routines are stored,
+# and rescheduled on startup).
+- tapOn: "DASHBOARD|TABLEAU"
+- scrollUntilVisible:
+    element:
+      text: "ROUTINES"
+    direction: DOWN
+- tapOn: "ROUTINES"
+- assertVisible: "E2E low battery reminder"
+
+# Cleanup: delete it again
+- tapOn: "Delete routine|Supprimer la routine"
+- tapOn: "DELETE|SUPPRIMER"
+- assertNotVisible: "E2E low battery reminder"
