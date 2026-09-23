@@ -122,11 +122,11 @@
             {
               "name": "SevenStatus",
               "label": "SEVEN AI",
-              "description": "Assistant status and one-tap shortcuts: organize downloads, morning briefing, research to PDF, build a website.",
+              "description": "Live weather + next calendar event, assistant status, and one-tap shortcuts: organize downloads, morning briefing, research to PDF, build a website.",
               "minWidth": "250dp",
-              "minHeight": "110dp",
+              "minHeight": "150dp",
               "targetCellWidth": 4,
-              "targetCellHeight": 2,
+              "targetCellHeight": 3,
               "resizeMode": "horizontal|vertical",
               "previewImage": "./assets/widget-preview/status-card.png",
               "updatePeriodMillis": 1800000

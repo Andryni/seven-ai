@@ -30,7 +30,17 @@ export interface SevenWidgetProps {
   statusLine: string;
   /** Theme accent color (hex), matches the in-app selected theme. */
   accentColor: string;
+  /** "18°C Overcast • Paris" (or an honest "unavailable" line) — same
+   *  Open-Meteo source as the in-app morning briefing. Optional so the
+   *  widget still renders (minus the glance row) if the caller doesn't
+   *  have it yet. */
+  weatherLine?: string;
+  /** "14:30 • Team sync" — the next event on the device calendar today
+   *  (or an honest "unavailable"/"no events" line). Optional, same reason
+   *  as `weatherLine`. */
+  nextEventLine?: string;
 }
+
 
 const ROW_HEIGHT = 40;
 
@@ -75,7 +85,48 @@ function ActionRow({
   );
 }
 
-export function SevenWidget({ assistantName, statusLine, accentColor }: SevenWidgetProps) {
+/** A single glance fact row (weather / next event) — a small accent dot plus
+ *  a line of text, deep-linking into the morning briefing like the header's
+ *  own status line does, since that's where the full detail lives. */
+function GlanceRow({ text, accentColor }: { text: string; accentColor: string }) {
+  return (
+    <FlexWidget
+      clickAction="OPEN_URI"
+      clickActionData={{ uri: 'seven://?briefing=1' }}
+      style={{
+        width: 'match_parent',
+        height: 'wrap_content',
+        flexDirection: 'row',
+        alignItems: 'center',
+        marginBottom: 6,
+      }}
+    >
+      <FlexWidget
+        style={{
+          width: 5,
+          height: 5,
+          borderRadius: 2.5,
+          backgroundColor: accentColor as `#${string}`,
+          marginRight: 8,
+        }}
+      />
+      <TextWidget
+        text={text}
+        truncate="END"
+        maxLines={1}
+        style={{ fontSize: 11, color: '#C7DEE6' }}
+      />
+    </FlexWidget>
+  );
+}
+
+export function SevenWidget({
+  assistantName,
+  statusLine,
+  accentColor,
+  weatherLine,
+  nextEventLine,
+}: SevenWidgetProps) {
   return (
     <FlexWidget
       clickAction="OPEN_APP"
@@ -95,7 +146,7 @@ export function SevenWidget({ assistantName, statusLine, accentColor }: SevenWid
           height: 'wrap_content',
           flexDirection: 'row',
           alignItems: 'center',
-          marginBottom: 10,
+          marginBottom: 8,
         }}
       >
         <FlexWidget
@@ -110,7 +161,25 @@ export function SevenWidget({ assistantName, statusLine, accentColor }: SevenWid
         <TextWidget text={assistantName.toUpperCase()} style={{ fontSize: 15, color: '#FFFFFF' }} />
       </FlexWidget>
 
-      <TextWidget text={statusLine} style={{ fontSize: 11, color: '#7FA6B3', marginBottom: 10 }} />
+      <TextWidget text={statusLine} style={{ fontSize: 11, color: '#7FA6B3', marginBottom: 8 }} />
+
+      {/* Glanceable live facts — the whole point of a home-screen widget
+          over an icon shortcut: information visible without opening the
+          app. Rendered only when the caller has them (both are optional so
+          older/partial call sites still compile and render). */}
+      {(weatherLine || nextEventLine) && (
+        <FlexWidget
+          style={{
+            width: 'match_parent',
+            height: 'wrap_content',
+            flexDirection: 'column',
+            marginBottom: 8,
+          }}
+        >
+          {weatherLine ? <GlanceRow text={weatherLine} accentColor={accentColor} /> : null}
+          {nextEventLine ? <GlanceRow text={nextEventLine} accentColor={accentColor} /> : null}
+        </FlexWidget>
+      )}
 
       <ActionRow label="Organize downloads" deepLink="seven://organizer" accentColor={accentColor} />
       <ActionRow label="Morning briefing" deepLink="seven://?briefing=1" accentColor={accentColor} />
