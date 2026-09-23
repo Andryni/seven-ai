@@ -12,6 +12,7 @@ import { useSevenStore } from '../src/store/useSevenStore';
 import { useWidgetRefresh } from '../src/hooks/useWidgetRefresh';
 import { fileOrganizer } from '../src/services/fileOrganizer';
 import { routineService } from '../src/services/routineService';
+import { installNotificationHandler } from '../src/services/notificationPresentation';
 import { ThemeProvider, PALETTES } from '../src/theme/theme';
 import type { Palette } from '../src/theme/theme';
 import { useResolvedUiMode } from '../src/hooks/useResolvedUiMode';
@@ -29,6 +30,12 @@ import { useConditionalRoutines } from '../src/hooks/useConditionalRoutines';
 // at Metro module resolution instead — a shim re-exports react-native with
 // Text/TextInput wrapped to inject the cap (see metro.config.js and
 // src/theme/fontScaling.ts for the full story).
+
+// Routines and briefings are reminders: without an installed handler,
+// expo-notifications shows nothing at all while the app is foregrounded, so a
+// routine firing on an open app used to be invisible. Module scope installs the
+// policy exactly once per process, before anything can schedule a notification.
+installNotificationHandler();
 
 const PUBLIC_ROUTES = ['/onboarding'];
 
