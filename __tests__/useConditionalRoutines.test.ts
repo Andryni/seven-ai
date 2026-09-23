@@ -79,7 +79,14 @@ describe('useConditionalRoutines', () => {
     mockedRoutineService.ensurePermissionsAsync.mockResolvedValue(true);
     useSevenStore.setState({
       automationRoutines: [],
-      config: { ...useSevenStore.getState().config, language: 'en' },
+      config: {
+        ...useSevenStore.getState().config,
+        language: 'en',
+        // The debounce state is persisted (config.conditionalRoutineState),
+        // so it would otherwise leak from one test's fired routine into the
+        // next test's fresh scenario.
+        conditionalRoutineState: undefined,
+      },
     });
     addEventListenerSpy = jest.spyOn(AppState, 'addEventListener').mockImplementation(
       ((_event: string, handler: (state: string) => void) => {

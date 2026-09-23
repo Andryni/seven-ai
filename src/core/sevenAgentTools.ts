@@ -13,7 +13,7 @@ import { sandboxService } from '../services/sandboxService';
 import { memoryService } from '../services/memoryService';
 import { contactsService, ResolvedContact } from '../services/contactsService';
 import { calendarService } from '../services/calendarService';
-import { routineService, validateTrigger } from '../services/routineService';
+import { routineService, validateTrigger, isTimeBasedTrigger } from '../services/routineService';
 
 /**
  * Tool declarations and execution, split out of `sevenAgent.ts`.
@@ -891,15 +891,34 @@ onEvent?: (line: string) => void
       if (routines.length === 0) {
         return { text: 'No automation routines are scheduled yet.' };
       }
+      const WEEKDAY_NAMES = ['Sunday', 'Monday', 'Tuesday', 'Wednesday', 'Thursday', 'Friday', 'Saturday'];
       const lines = routines.map((r) => {
-        const time = `${String(r.trigger.hour).padStart(2, '0')}:${String(r.trigger.minute).padStart(2, '0')}`;
-        const when =
-          r.trigger.type === 'weekly'
-            ? `every weekday #${r.trigger.weekday} at ${time}`
-            : r.trigger.type === 'once'
-              ? `on ${r.trigger.date} at ${time}`
-              : `daily at ${time}`;
-        return `- ${r.name} (${r.enabled ? 'enabled' : 'disabled'}): ${r.action.type} ${when}`;
+        // Conditional triggers carry no hour/minute at all — describe the
+        // live condition instead of printing "undefined:undefined".
+        const when = (() => {
+          if (isTimeBasedTrigger(r.trigger.type)) {
+            const time = `${String(r.trigger.hour ?? 0).padStart(2, '0')}:${String(r.trigger.minute ?? 0).padStart(2, '0')}`;
+            switch (r.trigger.type) {
+              case 'weekly':
+                return `every ${WEEKDAY_NAMES[(r.trigger.weekday ?? 1) - 1]} at ${time}`;
+              case 'once':
+                return `once, on ${r.trigger.date ?? '?'} at ${time}`;
+              default:
+                return `daily at ${time}`;
+            }
+          }
+          switch (r.trigger.type) {
+            case 'battery_low':
+              return `when battery drops to/below ${r.trigger.batteryThreshold ?? 20}%`;
+            case 'calendar_soon':
+              return `${r.trigger.minutesBefore ?? 15} min before a calendar event starts`;
+            case 'wifi_connect':
+              return 'when the device connects to Wi-Fi';
+            default:
+              return r.trigger.type;
+          }
+        })();
+        return `- ${r.name} (${r.enabled ? 'enabled' : 'disabled'}): ${r.action.type}${when ? `, ${when}` : ''}`;
       });
       return { text: `Scheduled routines:\n${lines.join('\n')}` };
     }

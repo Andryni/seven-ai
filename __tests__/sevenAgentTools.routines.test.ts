@@ -33,6 +33,9 @@ jest.mock('../src/services/routineService', () => ({
     cancelRoutine: jest.fn().mockResolvedValue(undefined),
   },
   validateTrigger: jest.fn(() => null),
+  // list_routines branches on this to describe time-based vs conditional
+  // triggers; mirror the real predicate (see routineService.ts).
+  isTimeBasedTrigger: jest.fn((type: string) => ['daily', 'weekly', 'once'].includes(type)),
 }));
 
 const mockedRoutineService = routineService as jest.Mocked<typeof routineService>;

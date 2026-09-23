@@ -73,6 +73,11 @@ export interface AssistantConfig {
       Only ever turned on if the device actually has biometrics/passcode
       enrolled (checked live in Settings before the switch can flip). */
   appLockEnabled?: boolean;
+  /** Debounce bookkeeping for conditional routines, persisted so a
+      battery_low / wifi_connect routine does not re-fire after every app
+      restart. Keyed by routine id; the shape mirrors
+      ConditionalRoutineState (core/conditionalRoutines.ts). */
+  conditionalRoutineState?: Record<string, { lastFiredAt?: number; wasConnected?: boolean; notifiedEventIds?: string[] }>;
   isConfigured: boolean;
 }
 
@@ -235,6 +240,15 @@ export interface AutomationRoutine {
   enabled: boolean;
   createdAt: number;
   lastRunAt?: number;
+  /** `notification.date` of the last routine notification tap that was
+   *  processed. Runs are triggered by tapping the routine's OS notification
+   *  (or cold-launching right after), and the OS keeps returning that same
+   *  "last response" to every subsequent launch until it is cleared — so
+   *  this stamp is what keeps a daily/weekly routine from re-running its
+   *  action on every app open. Optional: routines that never fired have no
+   *  stamp, and it is absent from persisted routines created before
+   *  idempotency was added. */
+  lastHandledNotificationAt?: number;
 }
 
 

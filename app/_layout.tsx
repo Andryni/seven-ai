@@ -52,7 +52,14 @@ export default function RootLayout() {
     // Web gets the display/ui/mono families from Google Fonts; native maps each
     // role to a face the OS already ships (see theme/typography.ts).
     installWebFonts();
-    loadSavedConfig();
+    loadSavedConfig().then(() => {
+      // Only meaningful once the persisted routines are in the store: the OS
+      // scheduler loses scheduled notifications on reinstall/cleared data/
+      // force-stop, and routines saved while notification permission was
+      // denied never got armed in the first place. Re-arming is silent (no
+      // permission prompt at startup).
+      routineService.rescheduleAll().catch(() => {});
+    });
     // Prepare downloads demo environment
     fileOrganizer.ensureDownloadsFolder().catch(() => {});
     // One line in logcat saying which bundle is actually running: the only way
@@ -72,13 +79,16 @@ export default function RootLayout() {
   // is what actually runs the routine's action. Both the live listener
   // (app already running) and the last-response check (app was launched by
   // the tap) funnel into the same handler so a routine never runs twice for
-  // one notification.
+  // one notification: `handleNotificationResponse` is idempotent per tap
+  // (persisted stamp on the routine) and clears the OS "last response" slot
+  // after processing, so a cold launch no longer replays yesterday's tap
+  // over and over.
   useEffect(() => {
     if (Platform.OS === 'web') return;
 
     const runFromResponse = (response: Notifications.NotificationResponse | null) => {
       const data = response?.notification.request.content.data as Record<string, unknown> | undefined;
-      routineService.handleNotificationResponse(data).then(({ ran, outcome }) => {
+      routineService.handleNotificationResponse(data, response).then(({ ran, outcome }) => {
         if (ran && outcome) {
           useSevenStore.getState().addTerminalLog(`ROUTINE: ${outcome}`, 'success');
         }

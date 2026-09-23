@@ -6,6 +6,7 @@ import { morningBriefingService } from './morningBriefingService';
 import { fileOrganizer } from './fileOrganizer';
 import { gmailService } from './gmailService';
 import { webSearchService } from './webSearchService';
+import type { NotificationResponse } from 'expo-notifications';
 
 /**
  * Local, no-server automation engine: "every morning at 8, run my briefing",
@@ -257,6 +258,35 @@ class RoutineService {
   }
 
   /**
+   * Re-arms every enabled time-based routine from the persisted store. The
+   * OS scheduler is volatile from the app's perspective — a cleared data
+   * cache, a reinstall, a force-stop, an OEM "battery cleaner", or the user
+   * granting notification permission only after the routine was created all
+   * leave the routine listed but never firing. Called once at app startup
+   * (see app/_layout.tsx) *after* the store has been hydrated from disk.
+   *
+   * Deliberately never prompts for permission (granted=false short-circuits
+   * silently) — startup must not pop a system dialog the user didn't ask
+   * for; the schedule result for each routine is what it is. Conditional
+   * triggers (battery_low/calendar_soon/wifi_connect) have nothing at the
+   * OS to re-arm — they are evaluated live in the foreground by
+   * `useConditionalRoutines` — so they are skipped.
+   */
+  async rescheduleAll(): Promise<void> {
+    if (!isSupported) return;
+    const store = useSevenStore.getState();
+    const language = (store.config.language || 'en') === 'fr' ? 'fr' : 'en';
+    for (const routine of store.automationRoutines) {
+      if (!routine.enabled || !isTimeBasedTrigger(routine.trigger.type)) continue;
+      try {
+        await this.scheduleRoutine(routine, language);
+      } catch {
+        // One broken routine must not stop the rest from re-arming.
+      }
+    }
+  }
+
+  /**
    * Actually performs a routine's action, reusing the same real services
    * every other entry point in the app uses (no simulated/mocked action).
    * Returns a short human-readable outcome so the caller can log/announce
@@ -299,23 +329,53 @@ class RoutineService {
 
   /**
    * Called on app foreground (see app/_layout.tsx) with the last tapped
-   * notification response. Runs the matching routine's action exactly
-   * once per notification tap, marks `lastRunAt`, and re-schedules 'daily'
-   * / 'weekly' routines for their next occurrence (expo-notifications
-   * already repeats those on the OS side, so this is a no-op for them —
-   * only a 'once' routine is disabled after running, since firing it again
-   * would contradict its own definition).
+   * notification response. Runs the matching routine's action exactly once
+   * per notification tap, marks `lastRunAt`, and re-schedules 'daily'/'weekly'
+   * routines for their next occurrence (expo-notifications already repeats
+   * those on the OS side, so this is a no-op for them — only a 'once' routine
+   * is disabled after running, since firing it again would contradict its own
+   * definition).
+   *
+   * Idempotent across cold launches, which is what makes it safe to also
+   * feed from `getLastNotificationResponseAsync()` every startup (that call
+   * keeps returning the same response until it is cleared — see
+   * `markNotificationResponseHandled` in app/_layout.tsx):
+   *
+   *  - the whole response is ignored when its `notification.date` matches
+   *    the routine's stored `lastHandledNotificationAt` (the same tap being
+   *    replayed — e.g. every subsequent app open), and
+   *  - a genuinely new tap while the app was alive is still respected even
+   *    within the same millisecond, because the live listener clears the
+   *    stored value before the response is processed.
    */
   async handleNotificationResponse(
-    data: Record<string, unknown> | undefined
+    data: Record<string, unknown> | undefined,
+    /** Full notification response, used for tap-level idempotency. */
+    response?: Pick<NotificationResponse, 'notification'> | null
   ): Promise<{ ran: boolean; routineId?: string; outcome?: string }> {
     if (!data || data.kind !== NOTIFICATION_DATA_KIND || typeof data.routineId !== 'string') {
+      // Not a routine notification at all (e.g. the daily briefing toast):
+      // still clear any pending "last response" so a later cold launch does
+      // not even consider it.
+      this.markNotificationResponseHandled(null);
       return { ran: false };
     }
     const routineId = data.routineId;
     const store = useSevenStore.getState();
     const routine = store.automationRoutines.find((r) => r.id === routineId);
-    if (!routine || !routine.enabled) {
+    const notificationDate = response?.notification?.date;
+    const isReplay =
+      typeof notificationDate === 'number' &&
+      routine?.lastHandledNotificationAt === notificationDate;
+
+    // Whether or not the action runs below, this exact tap has now been
+    // processed: recording the stamp (even for unknown/disabled routines)
+    // is what makes the next cold launch skip the replay.
+    if (typeof notificationDate === 'number') {
+      this.markNotificationResponseHandled({ routineId, notificationDate });
+    }
+
+    if (!routine || !routine.enabled || isReplay) {
       return { ran: false };
     }
 
@@ -324,11 +384,44 @@ class RoutineService {
 
     store.updateAutomationRoutine(routineId, {
       lastRunAt: Date.now(),
+      lastHandledNotificationAt: notificationDate,
       // A one-shot routine has served its purpose; recurring ones stay on.
       enabled: routine.trigger.type === 'once' ? false : routine.enabled,
     });
 
     return { ran: true, routineId, outcome };
+  }
+
+  /** In-memory stamp of the last routine notification tap processed (kept
+   *  module-level rather than in the store: it only needs to survive within
+   *  one JS runtime, and the persisted `lastHandledNotificationAt` on the
+   *  routine itself carries the cross-launch guarantee). */
+  private lastHandled: { routineId: string; notificationDate: number } | null = null;
+
+  /**
+   * Records that the most recent notification response has been dealt with,
+   * and clears the OS's "last response" slot so `getLastNotificationResponseAsync()`
+   * returns null on the next cold launch instead of replaying the same tap
+   * forever. Called after every processed response (routine or not) and
+   * whenever a tap's stamp is stored on the routine.
+   */
+  async markNotificationResponseHandled(
+    handled: { routineId: string; notificationDate: number } | null
+  ): Promise<void> {
+    this.lastHandled = handled;
+    try {
+      // Guarded: the method is unavailable on some platforms/SDK combos,
+      // and a failed clear must never take the app down at startup.
+      const mod = Notifications as unknown as {
+        clearLastNotificationResponse?: () => Promise<void>;
+      };
+      if (typeof mod.clearLastNotificationResponse === 'function') {
+        await mod.clearLastNotificationResponse();
+      }
+    } catch {
+      // The persisted lastHandledNotificationAt guard below still prevents
+      // a replay even if the OS clear fails.
+    }
   }
 }
 

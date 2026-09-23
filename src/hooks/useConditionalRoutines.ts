@@ -1,4 +1,4 @@
-import { useEffect, useRef } from 'react';
+import { useEffect } from 'react';
 import { Platform, AppState, type AppStateStatus } from 'react-native';
 import * as Battery from 'expo-battery';
 import NetInfo from '@react-native-community/netinfo';
@@ -39,10 +39,11 @@ const CHANNEL_ID = 'seven-routines';
 const NOTIFICATION_DATA_KIND = 'seven-conditional-routine';
 
 export function useConditionalRoutines(): void {
-  // One state slot per routine id, so battery_low/wifi_connect debounce
-  // independently per routine and calendar_soon tracks its own
-  // already-notified event ids without stepping on another routine's.
-  const stateByRoutineId = useRef<Map<string, ConditionalRoutineState>>(new Map());
+  // Debounce state is persisted in `config.conditionalRoutineState` (not a
+  // ref): the hook's lifetime is the app's foreground lifetime, while the
+  // "already fired for this episode" guarantee must survive restarts — with
+  // an in-memory map, a battery_low routine fired at 5% would fire again on
+  // every relaunch while the battery stayed low.
 
   useEffect(() => {
     if (Platform.OS === 'web') return;
@@ -80,17 +81,24 @@ export function useConditionalRoutines(): void {
         needsCalendar && calendarGranted ? await calendarService.getTodayEvents().catch(() => null) : null;
       if (cancelled) return;
 
+      /** Persisted view of the per-routine debounce state for this tick. */
+      const persisted = store.config.conditionalRoutineState ?? {};
+      /** Mutated during this tick, then written back once via setConfig. */
+      const next = { ...persisted } as NonNullable<
+        typeof store.config.conditionalRoutineState
+      >;
+
       for (const routine of routines) {
-        const prev = stateByRoutineId.current.get(routine.id) ?? {};
+        const prev: ConditionalRoutineState = persisted[routine.id] ?? {};
 
         if (routine.trigger.type === 'battery_low' && batteryPct !== null) {
           const threshold = routine.trigger.batteryThreshold ?? 20;
           if (shouldFireBatteryLow(routine, batteryPct, prev)) {
             await fireConditionalRoutine(routine, language);
-            stateByRoutineId.current.set(routine.id, { ...prev, lastFiredAt: Date.now() });
+            next[routine.id] = { ...prev, lastFiredAt: Date.now() };
           } else if (batteryPct > threshold && prev.lastFiredAt) {
             // Recharged back above the threshold: re-arm for the next dip.
-            stateByRoutineId.current.set(routine.id, { ...prev, lastFiredAt: undefined });
+            next[routine.id] = { ...prev, lastFiredAt: undefined };
           }
           continue;
         }
@@ -99,7 +107,7 @@ export function useConditionalRoutines(): void {
           if (shouldFireWifiConnect(routine, isWifiConnected, prev)) {
             await fireConditionalRoutine(routine, language);
           }
-          stateByRoutineId.current.set(routine.id, { ...prev, wasConnected: isWifiConnected });
+          next[routine.id] = { ...prev, wasConnected: isWifiConnected };
           continue;
         }
 
@@ -109,12 +117,17 @@ export function useConditionalRoutines(): void {
             for (const event of due) {
               await fireConditionalRoutine(routine, language, event.title);
             }
-            stateByRoutineId.current.set(routine.id, {
+            next[routine.id] = {
               ...prev,
               notifiedEventIds: [...(prev.notifiedEventIds ?? []), ...due.map((e) => e.id)],
-            });
+            };
           }
         }
+      }
+
+      // One write per tick only when something actually changed.
+      if (JSON.stringify(next) !== JSON.stringify(persisted)) {
+        useSevenStore.getState().setConfig({ conditionalRoutineState: next });
       }
     };
 
