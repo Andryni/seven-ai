@@ -107,6 +107,35 @@ describe('voice capture', () => {
     expect(onRecognized.mock.calls[0][0]).toBe('ouvre le dossier clients');
   });
 
+  it('surfaces a non-ignored partial immediately for barge-in, then delivers the full phrase', async () => {
+    const onPartial = jest.fn();
+    const onRecognized = jest.fn();
+    const { result } = renderHook(() => useVoice());
+
+    await act(async () => {
+      result.current.startListening(onRecognized, {
+        priority: 'background',
+        onPartial,
+        shouldIgnore: (text) => text.includes('assistant echo'),
+      });
+    });
+
+    partial('assistant echo');
+    expect(onPartial).not.toHaveBeenCalled();
+
+    // The ignored echo completes, is discarded, and the same owned capture is
+    // re-opened rather than dispatching the assistant's words as a user turn.
+    emit('speechend');
+    act(() => jest.advanceTimersByTime(1200));
+    expect(onRecognized).not.toHaveBeenCalled();
+
+    partial('wait please');
+    expect(onPartial).toHaveBeenCalledWith('wait please');
+    emit('speechend');
+    act(() => jest.advanceTimersByTime(1200));
+    expect(onRecognized).toHaveBeenCalledWith('wait please');
+  });
+
   it('asks Android for a patient endpointer instead of the default', async () => {
     const { result } = renderHook(() => useVoice());
 

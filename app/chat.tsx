@@ -29,6 +29,7 @@ import type { Palette } from '../src/theme/theme';
 import { t } from '../src/theme/i18n';
 import { haptics } from '../src/services/hapticsService';
 import { sevenAgent } from '../src/core/sevenAgent';
+import { looksLikeSelfEcho } from '../src/core/voiceBargeIn';
 import { selfHealing } from '../src/core/selfHealing';
 import { researchService } from '../src/services/researchService';
 import { chatExportService } from '../src/services/chatExportService';
@@ -201,6 +202,8 @@ export default function ChatScreen() {
   // Processing flag mirrored for timers: by the time a delayed re-arm fires,
   // the render that scheduled it is long gone, so state would read stale.
   const isProcessingRef = useRef(false);
+  const bargeInActiveRef = useRef(false);
+  const bargeInInterruptedRef = useRef(false);
   useEffect(() => {
     isProcessingRef.current = isProcessing;
   }, [isProcessing]);
@@ -386,6 +389,62 @@ export default function ChatScreen() {
       setCurrentAction(null);
     }
   };
+
+  /**
+   * While an immersive/hands-free conversation is speaking, keep one
+   * background-priority recognizer open. The first non-echo partial stops TTS
+   * immediately; capture remains open to collect the complete interruption.
+   */
+  useEffect(() => {
+    const enabled = config.voiceBargeInEnabled !== false;
+    const conversational = handsFreeMode || voiceModeOpen;
+    if (!enabled || !conversational || !isAudible || isProcessing) return;
+    if (bargeInActiveRef.current) return;
+
+    bargeInActiveRef.current = true;
+    bargeInInterruptedRef.current = false;
+    const assistantWords = spokenText;
+    const accepted = startListening(
+      (transcript) => {
+        bargeInActiveRef.current = false;
+        if (!bargeInInterruptedRef.current || !transcript.trim()) return;
+        handleSend(transcript);
+      },
+      {
+        priority: 'background',
+        shouldIgnore: (transcript) => looksLikeSelfEcho(transcript, assistantWords),
+        onPartial: () => {
+          if (bargeInInterruptedRef.current) return;
+          bargeInInterruptedRef.current = true;
+          clearHandsFreeChain();
+          void stopSpeaking();
+        },
+        onClosed: () => {
+          bargeInActiveRef.current = false;
+        },
+      }
+    );
+    if (!accepted) bargeInActiveRef.current = false;
+
+    return () => {
+      // A real interruption deliberately survives the TTS state transition so
+      // the remainder of the user's sentence is not cut off with the audio.
+      if (!bargeInInterruptedRef.current && bargeInActiveRef.current) {
+        stopListening();
+        bargeInActiveRef.current = false;
+      }
+    };
+    // Voice callbacks intentionally use this render. Each listed transition
+    // closes the old capture before a new one may open.
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [
+    config.voiceBargeInEnabled,
+    handsFreeMode,
+    voiceModeOpen,
+    isAudible,
+    isProcessing,
+    spokenText,
+  ]);
 
   /**
    * Handles content shared into SEVEN from another app's "Share ->" menu

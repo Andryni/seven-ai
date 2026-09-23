@@ -103,6 +103,7 @@ const defaultConfig: AssistantConfig = {
   voiceRate: 1.0,
   voiceLanguage: 'en-US',
   voiceEngine: 'fish',
+  voiceBargeInEnabled: true,
   // Fish Audio is the neural voice; the JARVIS models ship as defaults so the
   // engine is usable the moment a key is pasted.
   fishAudioApiKey: '',

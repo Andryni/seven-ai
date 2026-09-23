@@ -498,7 +498,11 @@ export const useVoice = () => {
       owner: symbol,
       priority: CapturePriority,
       /** Called when the capture closed with no transcript at all. */
-      onClosed?: () => void
+      onClosed?: () => void,
+      /** Live interim words, used by barge-in to cut playback immediately. */
+      onPartial?: (transcript: string) => void,
+      /** Reject recognizer results caused by the assistant's own speaker echo. */
+      shouldIgnore?: (transcript: string) => boolean
     ): boolean => {
       const speech = SPEECH_MODULE;
       if (!speech) return false;
@@ -693,7 +697,14 @@ export const useVoice = () => {
       const finalize = () => {
         clearFinalizeTimer();
         const text = heard();
-        if (text) deliver(text);
+        if (text && shouldIgnore?.(text)) {
+          // Playback leaked into the microphone. Forget only this recognizer
+          // phrase and keep the barge-in radar open for the user's real voice.
+          assembled = '';
+          lastPartial = '';
+          if (mountedRef.current) setPartialTranscript('');
+          restart();
+        } else if (text) deliver(text);
         else if (wantActiveRef.current) restart();
         else settle();
       };
@@ -723,6 +734,7 @@ export const useVoice = () => {
           restarts = 0;
           lastPartial = assembled ? `${assembled} ${transcript}` : transcript;
           if (mountedRef.current) setPartialTranscript(lastPartial);
+          if (!shouldIgnore?.(lastPartial)) onPartial?.(lastPartial);
           // A partial is progress, not a stopping point: re-arm the grace so a
           // run of partials ends the utterance even when no final ever comes.
           scheduleFinalize();
@@ -852,7 +864,12 @@ export const useVoice = () => {
   const startListening = useCallback(
     (
       onRecognized?: (transcript: string) => void,
-      options?: { priority?: CapturePriority; onClosed?: () => void }
+      options?: {
+        priority?: CapturePriority;
+        onClosed?: () => void;
+        onPartial?: (transcript: string) => void;
+        shouldIgnore?: (transcript: string) => boolean;
+      }
     ): boolean => {
       const priority: CapturePriority = options?.priority ?? 'foreground';
       const owner = ownerRef.current;
@@ -877,7 +894,9 @@ export const useVoice = () => {
           (transcript) => onRecognized?.(transcript),
           owner,
           priority,
-          options?.onClosed
+          options?.onClosed,
+          options?.onPartial,
+          options?.shouldIgnore
         );
         if (!started) {
           setVoiceMode('demo');

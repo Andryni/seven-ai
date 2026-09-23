@@ -18,7 +18,7 @@ shaders, real OAuth, DM scraping and self-healing that did not exist).
 | Dave Agent (web builder) | ✅ Real file generation; Gemini-powered when key is set, otherwise built-in templates. **Iterative refinement**: follow-up prompts ("make the title blue") rewrite the project in place (requires Gemini) |
 | Research → PDF | ✅ Real via `expo-print`, with **clickable table of contents** (anchor links), one page per section, and HTML-escaped content |
 | Text-to-speech | ✅ Real (`expo-speech`) with adjustable pitch / speed / language and a TEST button in Settings |
-| Speech recognition | ⚠️ Real with `expo-speech-recognition` installed (dev client / production build); **labeled demo fallback** otherwise (injects a sample command after 2.5s) |
+| Speech recognition | ⚠️ Real with `expo-speech-recognition` installed (dev client / production build); **labeled demo fallback** otherwise. In hands-free/voice mode, optional **barge-in** listens during TTS, rejects likely speaker echo, stops playback on the first real partial transcript, then sends the complete interruption. |
 | Mic amplitude | ⚠️ Real via `expo-av` metering when recording permission is granted; simulated otherwise |
 | Gmail | ✅ Real OAuth2 **PKCE** + Gmail API (read-only) — requires a Google Cloud OAuth Client ID |
 | Instagram | ⚠️ Opens a real browser session only; **no public DM API exists** |

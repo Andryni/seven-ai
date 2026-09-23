@@ -101,6 +101,9 @@ export default function SettingsScreen() {
   const [voicePitch, setVoicePitch] = useDraft(config.voicePitch || 1.0);
   const [voiceRate, setVoiceRate] = useDraft(config.voiceRate || 1.0);
   const [voiceLanguage, setVoiceLanguage] = useDraft(config.voiceLanguage || 'en-US');
+  const [voiceBargeInEnabled, setVoiceBargeInEnabled] = useDraft(
+    config.voiceBargeInEnabled !== false
+  );
   const [voiceEngine, setVoiceEngine] = useDraft<'system' | 'fish' | 'elevenlabs'>(
     config.voiceEngine || 'system'
   );
@@ -248,6 +251,7 @@ export default function SettingsScreen() {
       voiceRate,
       voiceLanguage,
       voiceEngine,
+      voiceBargeInEnabled,
       fishAudioApiKey: fishApiKey.trim() || config.fishAudioApiKey || '',
       fishVoiceIdEn: fishVoiceIdEn.trim() || JARVIS_VOICE_MODELS.en.id,
       fishVoiceIdFr: fishVoiceIdFr.trim() || JARVIS_VOICE_MODELS.fr.id,
@@ -813,6 +817,28 @@ export default function SettingsScreen() {
               value={voiceEnabled}
               onValueChange={setVoiceEnabled}
               trackColor={{ false: palette.bgElevated, true: palette.success }}
+              thumbColor="#FFF"
+            />
+          </View>
+
+          <View style={styles.switchRow}>
+            <View style={styles.switchLabelLeft}>
+              <Volume2 size={16} color={palette.accent} />
+              <View>
+                <Text style={styles.switchTitle}>
+                  {lang === 'fr' ? 'Interruption vocale' : 'Voice barge-in'}
+                </Text>
+                <Text style={styles.switchDesc}>
+                  {lang === 'fr'
+                    ? 'Parlez pendant la réponse pour interrompre SEVEN'
+                    : 'Speak over a response to interrupt SEVEN'}
+                </Text>
+              </View>
+            </View>
+            <Switch
+              value={voiceBargeInEnabled}
+              onValueChange={setVoiceBargeInEnabled}
+              trackColor={{ false: palette.bgElevated, true: palette.accent }}
               thumbColor="#FFF"
             />
           </View>

@@ -35,6 +35,9 @@ export interface AssistantConfig {
   voiceLanguage?: string;
   /** `fish` is the neural engine (Jarvis voices); the others are fallbacks. */
   voiceEngine?: 'system' | 'fish' | 'elevenlabs';
+  /** Barge-in: talking over SEVEN while it speaks interrupts it immediately,
+      instead of requiring a tap on the stop button first. Defaults on. */
+  voiceBargeInEnabled?: boolean;
   /** Fish Audio key — the neural voice (JARVIS FR/EN) uses this. */
   fishAudioApiKey?: string;
   /** Voice model ids per spoken language, so FR speaks French and EN English. */
