@@ -555,6 +555,10 @@ export default function SettingsScreen() {
           <View style={[styles.appearanceRow, styles.appearanceRowSpaced]}>
             <Text style={styles.inputLabel}>{t('settings.appLock', lang).toUpperCase()}</Text>
             <Switch
+              // Unlabelled switches announce as "switch, off" to a screen
+              // reader; this one also gives end-to-end tests a stable, unique
+              // handle (the row's own APP LOCK text is a separate node).
+              accessibilityLabel={t('settings.appLockToggle', lang)}
               value={!!config.appLockEnabled && !!appLockAvailable}
               disabled={!appLockAvailable}
               onValueChange={(val) => {

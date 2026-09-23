@@ -83,12 +83,12 @@ const sevenPalette: Record<UiMode, Palette> = {
     bgElevated: '#FFFFFF',
     bgDeep: '#DCE8EE',
     border: 'rgba(0,140,180,0.3)',
-    borderStrong: 'rgba(0,140,180,0.5)',
-    // WCAG AA fix: original '#0070F3' measured 4.08:1 against `bg`
-    // ('#EBF4F8'), below the 4.5:1 body-text threshold used anywhere this
-    // color paints text/icons directly on the page background. Darkened
-    // along the same hue to clear 4.5:1 on both `bg` and `bgElevated`.
-    accent: '#0067E0',
+    borderStrong: 'rgba(0,140,180,0.5)',      // WCAG AA fix: original '#0070F3' measured 4.08:1 against `bg`
+      // ('#EBF4F8'), below the 4.5:1 body-text threshold used anywhere this
+      // color paints text/icons directly on the page background. Darkened
+      // along the same hue; the final value clears 4.5:1 on all three light
+      // backgrounds (bg, bgElevated, bgDeep — see themeContrast.test.ts).
+      accent: '#0061D3',
     accentSoft: 'rgba(0,112,243,0.1)',
     accentStrong: 'rgba(0,112,243,0.4)',
     orbInner: '#0070F3',
@@ -120,9 +120,12 @@ export const PALETTES: Record<ThemeName, Record<UiMode, Palette>> = {
       bgDeep: '#EFDEE3',
       border: 'rgba(200,30,74,0.3)',
       borderStrong: 'rgba(200,30,74,0.5)',
-      // WCAG AA: already clears 4.5:1 against `bg`/`bgElevated` (~4.9-5.6:1);
-      // left unchanged.
-      accent: '#C81E4A',
+      // WCAG AA fix: the original '#C81E4A' cleared 4.5:1 against `bg` and
+      // `bgElevated` (~4.9-5.6:1) but measured 4.34:1 against `bgDeep`
+      // ('#EFDEE3'). Darkened slightly along the same hue — see
+      // themeContrast.test.ts, which holds every accent to all three
+      // light backgrounds.
+      accent: '#C01D47',
       accentSoft: 'rgba(200,30,74,0.08)',
       accentStrong: 'rgba(200,30,74,0.4)',
       orbInner: '#E11D48',
@@ -152,8 +155,10 @@ export const PALETTES: Record<ThemeName, Record<UiMode, Palette>> = {
       borderStrong: 'rgba(22,163,74,0.5)',
       // WCAG AA fix: original '#15803D' measured 4.52:1 against `bg`
       // ('#EDF5EF') and only ~4.5:1 against text-on-accentSoft badge
-      // backgrounds — right at the threshold. Darkened slightly for margin.
-      accent: '#157F3D',
+      // backgrounds — right at the threshold. Darkened for margin; the final
+      // value clears 4.5:1 on all three light backgrounds (see
+      // themeContrast.test.ts).
+      accent: '#147739',
       accentSoft: 'rgba(22,163,74,0.08)',
       accentStrong: 'rgba(22,163,74,0.4)',
       orbInner: '#22C55E',
