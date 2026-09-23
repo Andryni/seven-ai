@@ -15,10 +15,18 @@ import { ThemeProvider, PALETTES } from '../src/theme/theme';
 import type { Palette } from '../src/theme/theme';
 import { useResolvedUiMode } from '../src/hooks/useResolvedUiMode';
 import { installWebFonts, NATIVE_FONT_MAP } from '../src/theme/typography';
+import { installFontScalingCaps } from '../src/theme/fontScaling';
 import { SandboxExecutorHost } from '../src/components/SandboxExecutorHost';
 import { LaunchSplash } from '../src/components/LaunchSplash';
 import { AppLockScreen } from '../src/components/AppLockScreen';
 import { useAppLock } from '../src/hooks/useAppLock';
+
+// Cap OS-driven font scaling app-wide before first paint. Module scope (not
+// inside the component) so it runs exactly once per process, the same way
+// `Text.defaultProps` itself only needs to be set once — re-running it on
+// every RootLayout render/re-mount would be harmless (it's idempotent) but
+// pointless.
+installFontScalingCaps();
 
 const PUBLIC_ROUTES = ['/onboarding'];
 

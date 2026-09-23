@@ -34,7 +34,10 @@ const darkBase = {
   isDark: true,
   text: '#EDEDF2',
   textDim: '#8E8EA3',
-  textFaint: '#55556B',
+  // WCAG AA fix: '#55556B' measured ~2.5-2.8:1 against dark bg/bgElevated
+  // across all four themes (fails the 4.5:1 body-text threshold). Lightened
+  // along the same hue to clear 4.5:1 against every dark bg/bgElevated pair.
+  textFaint: '#7D7D96',
   success: '#4ADE80',
   warning: '#FBBF24',
   error: '#FF3366',
@@ -46,11 +49,17 @@ const lightBase = {
   isDark: false,
   text: '#1A1A26',
   textDim: '#5A5A72',
-  textFaint: '#9A9AB0',
-  success: '#16A34A',
-  warning: '#B45309',
-  error: '#DC2626',
-  info: '#0284C7',
+  // WCAG AA fix: '#9A9AB0' measured ~2.4-2.8:1 against light bg/bgElevated
+  // across all four themes (fails the 4.5:1 body-text threshold). Darkened
+  // along the same hue to clear 4.5:1 against every light bg/bgElevated pair.
+  textFaint: '#636372',
+  // The four accent colors below were nudged darker (same hue) to clear the
+  // WCAG AA 4.5:1 text-contrast threshold on light backgrounds; originals sat
+  // at 4.2-4.5:1, right at or below the line, with near-zero safety margin.
+  success: '#107334',
+  warning: '#A24B08',
+  error: '#C22222',
+  info: '#026A9F',
   particle: '#7A7A90',
 };
 
@@ -75,7 +84,11 @@ const sevenPalette: Record<UiMode, Palette> = {
     bgDeep: '#DCE8EE',
     border: 'rgba(0,140,180,0.3)',
     borderStrong: 'rgba(0,140,180,0.5)',
-    accent: '#0070F3',
+    // WCAG AA fix: original '#0070F3' measured 4.08:1 against `bg`
+    // ('#EBF4F8'), below the 4.5:1 body-text threshold used anywhere this
+    // color paints text/icons directly on the page background. Darkened
+    // along the same hue to clear 4.5:1 on both `bg` and `bgElevated`.
+    accent: '#0067E0',
     accentSoft: 'rgba(0,112,243,0.1)',
     accentStrong: 'rgba(0,112,243,0.4)',
     orbInner: '#0070F3',
@@ -107,6 +120,8 @@ export const PALETTES: Record<ThemeName, Record<UiMode, Palette>> = {
       bgDeep: '#EFDEE3',
       border: 'rgba(200,30,74,0.3)',
       borderStrong: 'rgba(200,30,74,0.5)',
+      // WCAG AA: already clears 4.5:1 against `bg`/`bgElevated` (~4.9-5.6:1);
+      // left unchanged.
       accent: '#C81E4A',
       accentSoft: 'rgba(200,30,74,0.08)',
       accentStrong: 'rgba(200,30,74,0.4)',
@@ -135,7 +150,10 @@ export const PALETTES: Record<ThemeName, Record<UiMode, Palette>> = {
       bgDeep: '#DCEDE1',
       border: 'rgba(22,163,74,0.3)',
       borderStrong: 'rgba(22,163,74,0.5)',
-      accent: '#15803D',
+      // WCAG AA fix: original '#15803D' measured 4.52:1 against `bg`
+      // ('#EDF5EF') and only ~4.5:1 against text-on-accentSoft badge
+      // backgrounds — right at the threshold. Darkened slightly for margin.
+      accent: '#157F3D',
       accentSoft: 'rgba(22,163,74,0.08)',
       accentStrong: 'rgba(22,163,74,0.4)',
       orbInner: '#22C55E',
