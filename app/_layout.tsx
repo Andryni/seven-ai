@@ -15,19 +15,19 @@ import { ThemeProvider, PALETTES } from '../src/theme/theme';
 import type { Palette } from '../src/theme/theme';
 import { useResolvedUiMode } from '../src/hooks/useResolvedUiMode';
 import { installWebFonts, NATIVE_FONT_MAP } from '../src/theme/typography';
-import { installFontScalingCaps } from '../src/theme/fontScaling';
 import { SandboxExecutorHost } from '../src/components/SandboxExecutorHost';
 import { LaunchSplash } from '../src/components/LaunchSplash';
 import { AppLockScreen } from '../src/components/AppLockScreen';
 import { useAppLock } from '../src/hooks/useAppLock';
 import { useConditionalRoutines } from '../src/hooks/useConditionalRoutines';
 
-// Cap OS-driven font scaling app-wide before first paint. Module scope (not
-// inside the component) so it runs exactly once per process, the same way
-// `Text.defaultProps` itself only needs to be set once — re-running it on
-// every RootLayout render/re-mount would be harmless (it's idempotent) but
-// pointless.
-installFontScalingCaps();
+// NOTE: the OS font-scaling cap (maxFontSizeMultiplier) is no longer installed
+// here. React 19 removed defaultProps for function components and no longer
+// folds it for RN host components either, so a runtime patch of
+// `Text.defaultProps` silently did nothing on device. The cap is now applied
+// at Metro module resolution instead — a shim re-exports react-native with
+// Text/TextInput wrapped to inject the cap (see metro.config.js and
+// src/theme/fontScaling.ts for the full story).
 
 const PUBLIC_ROUTES = ['/onboarding'];
 

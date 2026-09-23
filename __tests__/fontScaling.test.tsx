@@ -1,47 +1,57 @@
 import React from 'react';
-import { render } from '@testing-library/react-native';
 import { Text, TextInput } from 'react-native';
-import { installFontScalingCaps, MAX_FONT_SIZE_MULTIPLIER } from '../src/theme/fontScaling';
+import { render } from '@testing-library/react-native';
+import { withFontScalingCap, MAX_FONT_SIZE_MULTIPLIER } from '../src/theme/fontScaling';
 
-describe('installFontScalingCaps', () => {
-  afterEach(() => {
-    // Reset so other test files aren't affected by this global mutation.
-    (Text as unknown as { defaultProps?: unknown }).defaultProps = undefined;
-    (TextInput as unknown as { defaultProps?: unknown }).defaultProps = undefined;
+type AnyProps = Record<string, unknown>;
+const CappedText = withFontScalingCap(Text as unknown as React.ComponentType<AnyProps>);
+const CappedInput = withFontScalingCap(TextInput as unknown as React.ComponentType<AnyProps>);
+
+/**
+ * These tests exercise `withFontScalingCap` directly — the exact function the
+ * Metro shim applies to react-native's `Text`/`TextInput` in the shipped app
+ * (see metro.config.js / src/shims/react-native-font-cap.js).
+ *
+ * They deliberately do NOT assert on `Text.defaultProps` anymore: React 19
+ * removed defaultProps for function components and no longer folds it for RN
+ * host components either, so the previous test only passed because the Jest
+ * Text mock is a class that re-implements the defaultProps fold the real
+ * runtime dropped. Here the wrapper receives the real (Jest-mocked, but
+ * functionally equivalent) components and the assertions are on what the
+ * wrapper actually injects into the rendered tree.
+ */
+
+describe('withFontScalingCap', () => {
+  it('injects the cap when a render site passes no maxFontSizeMultiplier', () => {
+    const { getByText } = render(<CappedText>Hello</CappedText>);
+    expect(getByText('Hello').props.maxFontSizeMultiplier).toBe(MAX_FONT_SIZE_MULTIPLIER);
   });
 
-  it('sets maxFontSizeMultiplier on rendered Text elements', () => {
-    installFontScalingCaps();
-    const { getByText } = render(<Text>Hello</Text>);
-    const node = getByText('Hello');
-    expect(node.props.maxFontSizeMultiplier).toBe(MAX_FONT_SIZE_MULTIPLIER);
+  it('keeps an explicit call-site value instead of overwriting it', () => {
+    const { getByText } = render(<CappedText maxFontSizeMultiplier={2}>Big</CappedText>);
+    expect(getByText('Big').props.maxFontSizeMultiplier).toBe(2);
   });
 
-  it('sets maxFontSizeMultiplier on rendered TextInput elements', () => {
-    installFontScalingCaps();
-    const { getByDisplayValue } = render(<TextInput value="x" onChangeText={() => {}} />);
-    const node = getByDisplayValue('x');
-    expect(node.props.maxFontSizeMultiplier).toBe(MAX_FONT_SIZE_MULTIPLIER);
+  it('caps TextInput the same way', () => {
+    const { getByDisplayValue } = render(<CappedInput value="x" onChangeText={() => {}} />);
+    expect(getByDisplayValue('x').props.maxFontSizeMultiplier).toBe(MAX_FONT_SIZE_MULTIPLIER);
   });
 
-  it('is idempotent: calling twice keeps the same cap', () => {
-    installFontScalingCaps();
-    installFontScalingCaps();
-    const { getByText } = render(<Text>Hi</Text>);
-    expect(getByText('Hi').props.maxFontSizeMultiplier).toBe(MAX_FONT_SIZE_MULTIPLIER);
+  it('preserves other props untouched', () => {
+    const { getByText } = render(
+      <CappedText numberOfLines={1}>Kept</CappedText>
+    );
+    expect(getByText('Kept').props.numberOfLines).toBe(1);
   });
 
-  it('does not clobber other existing defaultProps entries', () => {
-    (Text as unknown as { defaultProps?: Record<string, unknown> }).defaultProps = { allowFontScaling: true };
-    installFontScalingCaps();
-    const props = (Text as unknown as { defaultProps?: Record<string, unknown> }).defaultProps;
-    expect(props?.allowFontScaling).toBe(true);
-    expect(props?.maxFontSizeMultiplier).toBe(MAX_FONT_SIZE_MULTIPLIER);
+  it('does not mutate the wrapped component', () => {
+    render(<CappedText>Probe</CappedText>);
+    expect((Text as unknown as { defaultProps?: Record<string, unknown> }).defaultProps).toBeUndefined();
   });
 
-  it('an explicit maxFontSizeMultiplier prop on a call site still overrides the default', () => {
-    installFontScalingCaps();
-    const { getByText } = render(<Text maxFontSizeMultiplier={2}>Override</Text>);
-    expect(getByText('Override').props.maxFontSizeMultiplier).toBe(2);
+  it('is stable across calls: two wraps still inject the same cap', () => {
+    const a = render(<CappedText>First</CappedText>).getByText('First');
+    const b = render(<CappedText>Second</CappedText>).getByText('Second');
+    expect(a.props.maxFontSizeMultiplier).toBe(b.props.maxFontSizeMultiplier);
   });
 });
