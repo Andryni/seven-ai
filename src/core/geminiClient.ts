@@ -65,11 +65,21 @@ interface LegacyResultLike {
 /** Adapter exposing the same two methods every call site already used
  * (`generateContent`, `generateContentStream`) on top of the new SDK's
  * stateless `ai.models.*` functions. */
+/** One incrementally-yielded chunk of a streamed response. Exposes
+ * `candidates` (not just concatenated text) so callers can detect a
+ * `functionCall` part arriving mid-stream — needed to keep true streaming
+ * for plain-text answers while still supporting tool-calling responses,
+ * which carry no meaningful text to stream at all. */
+interface StreamChunkLike {
+  text: () => string | undefined;
+  candidates?: { content?: { parts?: any[] } }[];
+}
+
 export interface ResolvedModel {
   generateContent: (request: { contents: any } | string) => Promise<LegacyResultLike>;
   generateContentStream: (
     request: { contents: any } | string
-  ) => Promise<{ stream: AsyncGenerator<{ text: () => string | undefined }> }>;
+  ) => Promise<{ stream: AsyncGenerator<StreamChunkLike> }>;
 }
 
 function wrapResponse(response: { text?: string; candidates?: any[] }): LegacyResultLike {
@@ -102,7 +112,7 @@ function makeResolvedModel(ai: GoogleGenAI, modelId: string, params: LegacyModel
       const stream = await ai.models.generateContentStream({ model: modelId, contents, config });
       async function* iterate() {
         for await (const chunk of stream) {
-          yield { text: () => chunk.text };
+          yield { text: () => chunk.text, candidates: chunk.candidates };
         }
       }
       return { stream: iterate() };

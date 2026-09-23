@@ -455,21 +455,52 @@ ${notes}`;
         store.addTerminalLog('OCULAR SUBSYSTEM: Multimodal image attached to Gemini payload', 'info');
       }
 
-      // ---- Pass 1 (unstreamed): collect the full answer / function call ----
-      const result = await withTransientRetry(() => model.generateContent({ contents }));
+      // ---- Pass 1: real token-level streaming, with a fallback to a
+      // buffered call if the model needs a tool. A function-calling turn
+      // carries no meaningful text to stream (the model emits the call
+      // itself, not prose), so it is detected as soon as a `functionCall`
+      // part appears in any chunk and the tool flow takes over from there
+      // — but a plain conversational answer streams from its very first
+      // token instead of waiting for the whole response to land, then
+      // being artificially re-chunked for display. ----
+      let fullText = '';
+      let functionCallPart: Part | undefined;
+      try {
+        const { stream } = await withTransientRetry(() => model.generateContentStream({ contents }));
+        for await (const chunk of stream) {
+          const chunkCandidate = chunk.candidates?.[0];
+          const chunkFunctionCall = chunkCandidate?.content?.parts?.find((p: any) => p.functionCall);
+          if (chunkFunctionCall) {
+            functionCallPart = chunkFunctionCall;
+            break;
+          }
+          const chunkText = chunk.text();
+          if (chunkText) {
+            fullText += chunkText;
+            onToken(chunkText);
+          }
+        }
+      } catch (streamErr: any) {
+        // A handful of edge cases (safety blocks mid-stream, transient
+        // network hiccups after the stream already started) surface here.
+        // Fall back to a single buffered call rather than losing the turn.
+        store.addTerminalLog(`Streaming pass 1 failed (${streamErr?.message || streamErr}); retrying buffered.`, 'warn');
+        fullText = '';
+        const result = await withTransientRetry(() => model.generateContent({ contents }));
+        const candidate = result.response.candidates?.[0];
+        functionCallPart = candidate?.content?.parts?.find((p: any) => p.functionCall);
+        if (!functionCallPart?.functionCall) {
+          fullText = result.response.text() || '';
+          await this.replayAsChunks(fullText, onToken);
+        }
+      }
       // A successful remote call ends the current outage: the next failure may
       // state its reason again.
       this.quotaNoticeShown = false;
-      const candidate = result.response.candidates?.[0];
-      const functionCallPart: Part | undefined = candidate?.content?.parts?.find(
-        (p: any) => p.functionCall
-      );
 
       if (!functionCallPart?.functionCall) {
-        // Conversational answer: replay it to the UI in chunks so the user
-        // still sees a progressive reveal.
-        const fullText = result.response.text() || '';
-        await this.replayAsChunks(fullText, onToken);
+        // Conversational answer: already streamed live above (or replayed
+        // above on the buffered-fallback path).
         store.addTerminalLog('Gemini response received [200 OK]', 'success');
         return {
           text: fullText,
