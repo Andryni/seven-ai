@@ -48,6 +48,7 @@ import {
   Move,
   RotateCcw,
   EyeOff,
+  Clock,
 } from 'lucide-react-native';
 
 /**
@@ -59,7 +60,7 @@ import {
 let greetedThisLaunch = false;
 
 /** Module ids, in deck order. The persisted layout is keyed by these. */
-const DECK_IDS = ['briefing', 'dave', 'organizer', 'research', 'selfheal', 'dock'];
+const DECK_IDS = ['briefing', 'dave', 'organizer', 'research', 'routines', 'selfheal', 'dock'];
 
 /**
  * What Gideon says when the app opens.
@@ -495,6 +496,17 @@ export default function DashboardScreen() {
         onPress: () => {
           haptics.light();
           router.push('/research');
+        },
+      },
+      {
+        id: 'routines',
+        title: t('mod.routines.title', language),
+        desc: t('mod.routines.desc', language),
+        icon: <Clock size={15} color={palette.warning} />,
+        borderColor: palette.warning,
+        onPress: () => {
+          haptics.light();
+          router.push('/routines');
         },
       },
       {

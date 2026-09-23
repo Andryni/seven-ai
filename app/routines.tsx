@@ -1,0 +1,660 @@
+import React, { useMemo, useState } from 'react';
+import { FONT } from '../src/theme/typography';
+import {
+  View,
+  Text,
+  TextInput,
+  TouchableOpacity,
+  FlatList,
+  Modal,
+  ScrollView,
+  Switch,
+} from 'react-native';
+import { useRouter } from 'expo-router';
+import { useSevenStore } from '../src/store/useSevenStore';
+import { ParticleBackground } from '../src/components/ParticleBackground';
+import { HudHeader } from '../src/components/HudHeader';
+import { ScreenReveal } from '../src/components/ScreenReveal';
+import { BottomNav } from '../src/components/BottomNav';
+import { ConfirmDialog } from '../src/components/ConfirmDialog';
+import { routineService } from '../src/services/routineService';
+import { haptics } from '../src/services/hapticsService';
+import { useTheme, useThemeStyles } from '../src/theme/theme';
+import type { Palette } from '../src/theme/theme';
+import { t } from '../src/theme/i18n';
+import type { AutomationRoutine, RoutineActionType, RoutineTriggerType } from '../src/types';
+import {
+  ChevronLeft,
+  Clock,
+  Plus,
+  Trash2,
+  Sun,
+  FolderSync,
+  Mail,
+  Search,
+  StickyNote,
+  X,
+  Repeat,
+  CalendarClock,
+  AlarmClock,
+} from 'lucide-react-native';
+
+const TRIGGER_TYPES: RoutineTriggerType[] = ['daily', 'weekly', 'once'];
+const ACTION_TYPES: RoutineActionType[] = [
+  'morning_briefing',
+  'organize_files',
+  'check_emails',
+  'web_search',
+  'reminder',
+];
+const WEEKDAYS = [1, 2, 3, 4, 5, 6, 7];
+/** Bounded 0-23 / 0-59 chip strips: fast to tap, and impossible to mistype
+ * the way a free-text hour field would be. */
+const HOURS = Array.from({ length: 24 }, (_, i) => i);
+const MINUTES = [0, 5, 10, 15, 20, 25, 30, 35, 40, 45, 50, 55];
+
+function actionIcon(type: RoutineActionType, color: string, size = 15) {
+  switch (type) {
+    case 'morning_briefing':
+      return <Sun size={size} color={color} />;
+    case 'organize_files':
+      return <FolderSync size={size} color={color} />;
+    case 'check_emails':
+      return <Mail size={size} color={color} />;
+    case 'web_search':
+      return <Search size={size} color={color} />;
+    case 'reminder':
+    default:
+      return <StickyNote size={size} color={color} />;
+  }
+}
+
+function triggerIcon(type: RoutineTriggerType, color: string, size = 13) {
+  switch (type) {
+    case 'weekly':
+      return <Repeat size={size} color={color} />;
+    case 'once':
+      return <CalendarClock size={size} color={color} />;
+    case 'daily':
+    default:
+      return <AlarmClock size={size} color={color} />;
+  }
+}
+
+function pad2(n: number): string {
+  return String(n).padStart(2, '0');
+}
+
+function summarize(routine: AutomationRoutine, lang: 'fr' | 'en'): string {
+  const time = `${pad2(routine.trigger.hour)}:${pad2(routine.trigger.minute)}`;
+  if (routine.trigger.type === 'weekly') {
+    const weekday = t(`routines.weekday.${routine.trigger.weekday ?? 1}`, lang);
+    return t('routines.summary.weekly', lang).replace('{weekday}', weekday).replace('{time}', time);
+  }
+  if (routine.trigger.type === 'once') {
+    return t('routines.summary.once', lang).replace('{date}', routine.trigger.date ?? '?').replace('{time}', time);
+  }
+  return t('routines.summary.daily', lang).replace('{time}', time);
+}
+
+/** Tomorrow, YYYY-MM-DD — a sane, always-valid default for a new one-shot routine. */
+function tomorrowIso(): string {
+  const d = new Date(Date.now() + 24 * 60 * 60 * 1000);
+  return `${d.getFullYear()}-${pad2(d.getMonth() + 1)}-${pad2(d.getDate())}`;
+}
+
+function emptyDraft(): AutomationRoutine {
+  return {
+    id: `routine-${Date.now()}-${Math.random().toString(36).slice(2, 7)}`,
+    name: '',
+    trigger: { type: 'daily', hour: 8, minute: 0 },
+    action: { type: 'morning_briefing' },
+    enabled: true,
+    createdAt: Date.now(),
+  };
+}
+
+export default function RoutinesScreen() {
+  const router = useRouter();
+  const config = useSevenStore((s) => s.config);
+  const routines = useSevenStore((s) => s.automationRoutines);
+  const addAutomationRoutine = useSevenStore((s) => s.addAutomationRoutine);
+  const updateAutomationRoutine = useSevenStore((s) => s.updateAutomationRoutine);
+  const deleteAutomationRoutine = useSevenStore((s) => s.deleteAutomationRoutine);
+  const addTerminalLog = useSevenStore((s) => s.addTerminalLog);
+
+  const palette = useTheme();
+  const styles = useThemeStyles(routinesStyles);
+  const lang = (config.language ?? 'en') === 'fr' ? 'fr' : 'en';
+
+  const [editing, setEditing] = useState<AutomationRoutine | null>(null);
+  const [isNew, setIsNew] = useState(false);
+  const [saveError, setSaveError] = useState<string | null>(null);
+  const [saving, setSaving] = useState(false);
+  const [pendingDelete, setPendingDelete] = useState<AutomationRoutine | null>(null);
+
+  const sorted = useMemo(
+    () => [...routines].sort((a, b) => b.createdAt - a.createdAt),
+    [routines]
+  );
+
+  const openNew = () => {
+    haptics.light();
+    setEditing(emptyDraft());
+    setIsNew(true);
+    setSaveError(null);
+  };
+
+  const openEdit = (routine: AutomationRoutine) => {
+    haptics.light();
+    setEditing({ ...routine, trigger: { ...routine.trigger }, action: { ...routine.action } });
+    setIsNew(false);
+    setSaveError(null);
+  };
+
+  const closeModal = () => {
+    setEditing(null);
+    setSaveError(null);
+  };
+
+  const handleSave = async () => {
+    if (!editing) return;
+    const name = editing.name.trim() || (lang === 'fr' ? 'Routine sans nom' : 'Untitled routine');
+    const validationError = routineService.supported
+      ? null
+      : null; // trigger validation happens inside scheduleRoutine; surfaced via its result below.
+    void validationError;
+
+    setSaving(true);
+    const draft: AutomationRoutine = { ...editing, name };
+    const result = await routineService.scheduleRoutine(draft, lang);
+
+    if (result === 'invalid') {
+      setSaveError(t('routines.status.invalid', lang));
+      setSaving(false);
+      return;
+    }
+
+    if (isNew) {
+      addAutomationRoutine(draft);
+    } else {
+      updateAutomationRoutine(draft.id, draft);
+    }
+
+    const statusKey = `routines.status.${result}` as const;
+    addTerminalLog(t(statusKey, lang), result === 'scheduled' ? 'success' : 'warn');
+    haptics.success();
+    setSaving(false);
+    setEditing(null);
+  };
+
+  const handleToggleEnabled = async (routine: AutomationRoutine) => {
+    haptics.light();
+    const next = !routine.enabled;
+    if (next) {
+      const result = await routineService.scheduleRoutine(routine, lang);
+      if (result !== 'scheduled') {
+        addTerminalLog(t(`routines.status.${result}` as const, lang), 'warn');
+        if (result === 'invalid') return;
+      }
+    } else {
+      await routineService.cancelRoutine(routine.id);
+    }
+    updateAutomationRoutine(routine.id, { enabled: next });
+    addTerminalLog(t(next ? 'routines.status.enabled' : 'routines.status.disabled', lang), 'info');
+  };
+
+  const confirmDelete = async () => {
+    if (!pendingDelete) return;
+    await routineService.cancelRoutine(pendingDelete.id);
+    deleteAutomationRoutine(pendingDelete.id);
+    addTerminalLog(t('routines.status.deleted', lang), 'info');
+    setPendingDelete(null);
+  };
+
+  return (
+    <ParticleBackground>
+      <HudHeader />
+
+      <ScreenReveal index={0}>
+        <View style={styles.topNav}>
+          <TouchableOpacity
+            style={styles.backBtn}
+            accessibilityLabel={t('nav.dashboard', lang)}
+            onPress={() => router.push('/')}
+          >
+            <ChevronLeft size={16} color={palette.accent} />
+            <Text style={styles.backBtnText}>DASHBOARD</Text>
+          </TouchableOpacity>
+
+          <View style={styles.titleWrap}>
+            <Clock size={15} color={palette.accent} />
+            <Text style={styles.titleText}>{t('routines.title', lang)}</Text>
+          </View>
+
+          <TouchableOpacity
+            style={styles.newBtnCompact}
+            accessibilityLabel={t('routines.new', lang)}
+            onPress={openNew}
+          >
+            <Plus size={16} color={palette.bgDeep} />
+          </TouchableOpacity>
+        </View>
+      </ScreenReveal>
+
+      <FlatList
+        style={styles.scrollArea}
+        contentContainerStyle={styles.scrollContent}
+        data={sorted}
+        keyExtractor={(r) => r.id}
+        ListHeaderComponent={
+          <ScreenReveal index={1}>
+            <Text style={styles.subtitle}>{t('routines.subtitle', lang)}</Text>
+          </ScreenReveal>
+        }
+        ListEmptyComponent={
+          <ScreenReveal index={2}>
+            <View style={styles.emptyCard}>
+              <Text style={styles.emptyText}>{t('routines.empty', lang)}</Text>
+            </View>
+          </ScreenReveal>
+        }
+        renderItem={({ item, index }) => (
+          <ScreenReveal index={Math.min(index + 2, 6)}>
+            <TouchableOpacity
+              style={[styles.card, !item.enabled && styles.cardDisabled]}
+              onPress={() => openEdit(item)}
+              accessibilityLabel={item.name}
+            >
+              <View style={styles.cardTop}>
+                <View style={styles.cardLeft}>
+                  <View style={[styles.iconWrap, { borderColor: palette.accent }]}>
+                    {actionIcon(item.action.type, palette.accent)}
+                  </View>
+                  <View style={styles.cardTextWrap}>
+                    <Text style={styles.cardName} numberOfLines={1}>
+                      {item.name}
+                    </Text>
+                    <View style={styles.cardMetaRow}>
+                      {triggerIcon(item.trigger.type, palette.textDim, 11)}
+                      <Text style={styles.cardMeta}>{summarize(item, lang)}</Text>
+                    </View>
+                    <Text style={styles.cardAction}>
+                      {t(`routines.action.${item.action.type}`, lang)}
+                      {item.action.payload ? ` — ${item.action.payload}` : ''}
+                    </Text>
+                  </View>
+                </View>
+                <Switch
+                  value={item.enabled}
+                  onValueChange={() => handleToggleEnabled(item)}
+                  trackColor={{ false: palette.bgElevated, true: palette.accent }}
+                  thumbColor="#FFF"
+                />
+              </View>
+              <View style={styles.cardBottom}>
+                <Text style={styles.cardLastRun}>
+                  {item.lastRunAt
+                    ? `${t('routines.lastRun', lang)}: ${new Date(item.lastRunAt).toLocaleString()}`
+                    : t('routines.never', lang)}
+                </Text>
+                <TouchableOpacity
+                  accessibilityLabel={t('routines.delete', lang)}
+                  onPress={() => {
+                    haptics.warning();
+                    setPendingDelete(item);
+                  }}
+                  hitSlop={{ top: 8, bottom: 8, left: 8, right: 8 }}
+                >
+                  <Trash2 size={14} color={palette.error} />
+                </TouchableOpacity>
+              </View>
+            </TouchableOpacity>
+          </ScreenReveal>
+        )}
+        ListFooterComponent={<View style={{ height: 40 }} />}
+      />
+
+      <BottomNav active="dashboard" />
+
+      {/* Create/edit routine */}
+      <Modal visible={editing !== null} transparent animationType="fade" onRequestClose={closeModal}>
+        <View style={styles.backdrop}>
+          <ScrollView
+            style={styles.modalScroll}
+            contentContainerStyle={styles.modalContent}
+            keyboardShouldPersistTaps="handled"
+          >
+            <View style={styles.modalHeaderRow}>
+              <Text style={styles.modalTitle}>{isNew ? t('routines.new', lang) : t('routines.edit', lang)}</Text>
+              <TouchableOpacity accessibilityLabel={t('common.cancel', lang)} onPress={closeModal}>
+                <X size={18} color={palette.textDim} />
+              </TouchableOpacity>
+            </View>
+
+            {editing && (
+              <>
+                <TextInput
+                  style={styles.nameInput}
+                  value={editing.name}
+                  onChangeText={(name) => setEditing({ ...editing, name })}
+                  placeholder={t('routines.namePlaceholder', lang)}
+                  placeholderTextColor={palette.textFaint}
+                  maxLength={60}
+                />
+
+                <Text style={styles.fieldLabel}>{t('routines.trigger', lang)}</Text>
+                <View style={styles.chipRow}>
+                  {TRIGGER_TYPES.map((tt) => (
+                    <TouchableOpacity
+                      key={tt}
+                      style={[styles.chip, editing.trigger.type === tt && styles.chipActive]}
+                      onPress={() =>
+                        setEditing({
+                          ...editing,
+                          trigger:
+                            tt === 'weekly'
+                              ? { ...editing.trigger, type: tt, weekday: editing.trigger.weekday ?? 2 }
+                              : tt === 'once'
+                                ? { ...editing.trigger, type: tt, date: editing.trigger.date ?? tomorrowIso() }
+                                : { type: tt, hour: editing.trigger.hour, minute: editing.trigger.minute },
+                        })
+                      }
+                    >
+                      {triggerIcon(tt, editing.trigger.type === tt ? palette.bgDeep : palette.textDim)}
+                      <Text style={[styles.chipText, editing.trigger.type === tt && styles.chipTextActive]}>
+                        {t(`routines.trigger.${tt}`, lang)}
+                      </Text>
+                    </TouchableOpacity>
+                  ))}
+                </View>
+
+                {editing.trigger.type === 'weekly' && (
+                  <>
+                    <Text style={styles.fieldLabel}>{t('routines.weekday', lang)}</Text>
+                    <View style={styles.chipRow}>
+                      {WEEKDAYS.map((wd) => (
+                        <TouchableOpacity
+                          key={wd}
+                          style={[styles.dayChip, editing.trigger.weekday === wd && styles.chipActive]}
+                          onPress={() => setEditing({ ...editing, trigger: { ...editing.trigger, weekday: wd } })}
+                        >
+                          <Text
+                            style={[
+                              styles.chipText,
+                              editing.trigger.weekday === wd && styles.chipTextActive,
+                            ]}
+                          >
+                            {t(`routines.weekday.${wd}`, lang)}
+                          </Text>
+                        </TouchableOpacity>
+                      ))}
+                    </View>
+                  </>
+                )}
+
+                {editing.trigger.type === 'once' && (
+                  <>
+                    <Text style={styles.fieldLabel}>{t('routines.date', lang)}</Text>
+                    <TextInput
+                      style={styles.nameInput}
+                      value={editing.trigger.date ?? ''}
+                      onChangeText={(date) => setEditing({ ...editing, trigger: { ...editing.trigger, date } })}
+                      placeholder={t('routines.datePlaceholder', lang)}
+                      placeholderTextColor={palette.textFaint}
+                      autoCorrect={false}
+                      maxLength={10}
+                    />
+                  </>
+                )}
+
+                <Text style={styles.fieldLabel}>{t('routines.time', lang)}</Text>
+                <View style={styles.timeRow}>
+                  <ScrollView horizontal showsHorizontalScrollIndicator={false} style={styles.timeScroll}>
+                    <View style={styles.chipRow}>
+                      {HOURS.map((h) => (
+                        <TouchableOpacity
+                          key={h}
+                          style={[styles.timeChip, editing.trigger.hour === h && styles.chipActive]}
+                          onPress={() => setEditing({ ...editing, trigger: { ...editing.trigger, hour: h } })}
+                        >
+                          <Text style={[styles.chipText, editing.trigger.hour === h && styles.chipTextActive]}>
+                            {pad2(h)}
+                          </Text>
+                        </TouchableOpacity>
+                      ))}
+                    </View>
+                  </ScrollView>
+                  <Text style={styles.timeColon}>:</Text>
+                  <ScrollView horizontal showsHorizontalScrollIndicator={false} style={styles.timeScroll}>
+                    <View style={styles.chipRow}>
+                      {MINUTES.map((m) => (
+                        <TouchableOpacity
+                          key={m}
+                          style={[styles.timeChip, editing.trigger.minute === m && styles.chipActive]}
+                          onPress={() => setEditing({ ...editing, trigger: { ...editing.trigger, minute: m } })}
+                        >
+                          <Text style={[styles.chipText, editing.trigger.minute === m && styles.chipTextActive]}>
+                            {pad2(m)}
+                          </Text>
+                        </TouchableOpacity>
+                      ))}
+                    </View>
+                  </ScrollView>
+                </View>
+
+                <Text style={styles.fieldLabel}>{t('routines.action', lang)}</Text>
+                <View style={styles.chipRow}>
+                  {ACTION_TYPES.map((at) => (
+                    <TouchableOpacity
+                      key={at}
+                      style={[styles.chip, editing.action.type === at && styles.chipActive]}
+                      onPress={() => setEditing({ ...editing, action: { type: at, payload: editing.action.payload } })}
+                    >
+                      {actionIcon(at, editing.action.type === at ? palette.bgDeep : palette.textDim, 13)}
+                      <Text style={[styles.chipText, editing.action.type === at && styles.chipTextActive]}>
+                        {t(`routines.action.${at}`, lang)}
+                      </Text>
+                    </TouchableOpacity>
+                  ))}
+                </View>
+
+                {(editing.action.type === 'web_search' || editing.action.type === 'reminder') && (
+                  <TextInput
+                    style={styles.nameInput}
+                    value={editing.action.payload ?? ''}
+                    onChangeText={(payload) => setEditing({ ...editing, action: { ...editing.action, payload } })}
+                    placeholder={t(
+                      editing.action.type === 'web_search' ? 'routines.payload.search' : 'routines.payload.reminder',
+                      lang
+                    )}
+                    placeholderTextColor={palette.textFaint}
+                  />
+                )}
+
+                {saveError && <Text style={styles.errorText}>{saveError}</Text>}
+
+                <TouchableOpacity
+                  style={[styles.saveBtn, saving && styles.saveBtnDisabled]}
+                  onPress={handleSave}
+                  disabled={saving}
+                  accessibilityLabel={t('routines.save', lang)}
+                >
+                  <Text style={styles.saveBtnText}>{saving ? '...' : t('routines.save', lang)}</Text>
+                </TouchableOpacity>
+              </>
+            )}
+          </ScrollView>
+        </View>
+      </Modal>
+
+      <ConfirmDialog
+        visible={pendingDelete !== null}
+        title={t('routines.delete', lang)}
+        message={pendingDelete ? `${pendingDelete.name} — ${t('routines.deleteConfirm', lang)}` : undefined}
+        confirmLabel={lang === 'fr' ? 'SUPPRIMER' : 'DELETE'}
+        cancelLabel={t('common.cancel', lang)}
+        destructive
+        onConfirm={confirmDelete}
+        onCancel={() => setPendingDelete(null)}
+      />
+    </ParticleBackground>
+  );
+}
+
+const routinesStyles = (t: Palette) =>
+  ({
+    topNav: {
+      flexDirection: 'row',
+      alignItems: 'center',
+      justifyContent: 'space-between',
+      paddingHorizontal: 12,
+      paddingVertical: 8,
+      backgroundColor: t.bgDeep,
+      borderBottomWidth: 1,
+      borderBottomColor: t.border,
+    },
+    backBtn: { flexDirection: 'row', alignItems: 'center', gap: 3 },
+    backBtnText: { fontFamily: FONT.mono, color: t.accent, fontSize: 9.5, fontWeight: '700' },
+    titleWrap: { flexDirection: 'row', alignItems: 'center', gap: 6 },
+    titleText: { fontFamily: FONT.mono, color: t.text, fontSize: 11, fontWeight: '800', letterSpacing: 1 },
+    newBtnCompact: {
+      width: 26,
+      height: 26,
+      borderRadius: 13,
+      backgroundColor: t.accent,
+      alignItems: 'center',
+      justifyContent: 'center',
+    },
+    scrollArea: { flex: 1 },
+    scrollContent: { paddingHorizontal: 12, paddingTop: 12, paddingBottom: 40 },
+    subtitle: { fontFamily: FONT.mono, color: t.textDim, fontSize: 10, lineHeight: 14, marginBottom: 12 },
+    emptyCard: {
+      backgroundColor: t.bgElevated,
+      borderRadius: 8,
+      borderWidth: 1,
+      borderColor: t.border,
+      padding: 16,
+      alignItems: 'center',
+    },
+    emptyText: { fontFamily: FONT.mono, color: t.textFaint, fontSize: 10, textAlign: 'center', lineHeight: 15 },
+    card: {
+      backgroundColor: t.bgElevated,
+      borderRadius: 8,
+      borderWidth: 1,
+      borderColor: t.border,
+      padding: 12,
+      marginBottom: 10,
+    },
+    cardDisabled: { opacity: 0.55 },
+    cardTop: { flexDirection: 'row', alignItems: 'center', justifyContent: 'space-between' },
+    cardLeft: { flexDirection: 'row', alignItems: 'center', gap: 10, flex: 1, marginRight: 8 },
+    iconWrap: {
+      width: 32,
+      height: 32,
+      borderRadius: 16,
+      borderWidth: 1,
+      alignItems: 'center',
+      justifyContent: 'center',
+    },
+    cardTextWrap: { flex: 1 },
+    cardName: { fontFamily: FONT.mono, color: t.text, fontSize: 11.5, fontWeight: '800' },
+    cardMetaRow: { flexDirection: 'row', alignItems: 'center', gap: 4, marginTop: 2 },
+    cardMeta: { fontFamily: FONT.mono, color: t.textDim, fontSize: 9.5 },
+    cardAction: { fontFamily: FONT.mono, color: t.accent, fontSize: 9, marginTop: 2 },
+    cardBottom: {
+      flexDirection: 'row',
+      justifyContent: 'space-between',
+      alignItems: 'center',
+      marginTop: 10,
+      paddingTop: 8,
+      borderTopWidth: 1,
+      borderTopColor: t.border,
+    },
+    cardLastRun: { fontFamily: FONT.mono, color: t.textFaint, fontSize: 8.5 },
+    backdrop: {
+      flex: 1,
+      backgroundColor: 'rgba(0,0,0,0.85)',
+      justifyContent: 'center',
+      padding: 16,
+    },
+    modalScroll: { maxHeight: '90%' },
+    modalContent: {
+      backgroundColor: t.bgElevated,
+      borderRadius: 10,
+      borderWidth: 1,
+      borderColor: t.borderStrong,
+      padding: 16,
+    },
+    modalHeaderRow: {
+      flexDirection: 'row',
+      alignItems: 'center',
+      justifyContent: 'space-between',
+      marginBottom: 12,
+    },
+    modalTitle: { fontFamily: FONT.mono, color: t.text, fontSize: 12, fontWeight: '800', letterSpacing: 0.5 },
+    nameInput: {
+      fontFamily: FONT.mono,
+      color: t.text,
+      fontSize: 11,
+      backgroundColor: t.bgDeep,
+      borderRadius: 6,
+      borderWidth: 1,
+      borderColor: t.border,
+      paddingHorizontal: 10,
+      paddingVertical: 9,
+      marginBottom: 12,
+    },
+    fieldLabel: {
+      fontFamily: FONT.mono,
+      color: t.accent,
+      fontSize: 9.5,
+      fontWeight: '700',
+      letterSpacing: 0.6,
+      marginBottom: 6,
+    },
+    chipRow: { flexDirection: 'row', flexWrap: 'wrap', gap: 6, marginBottom: 12 },
+    chip: {
+      flexDirection: 'row',
+      alignItems: 'center',
+      gap: 5,
+      paddingHorizontal: 10,
+      paddingVertical: 7,
+      borderRadius: 5,
+      borderWidth: 1,
+      borderColor: t.border,
+      backgroundColor: t.bgDeep,
+    },
+    dayChip: {
+      paddingHorizontal: 10,
+      paddingVertical: 7,
+      borderRadius: 5,
+      borderWidth: 1,
+      borderColor: t.border,
+      backgroundColor: t.bgDeep,
+    },
+    chipActive: { backgroundColor: t.accent, borderColor: t.accent },
+    chipText: { fontFamily: FONT.mono, color: t.textDim, fontSize: 9.5, fontWeight: '700' },
+    chipTextActive: { color: t.bgDeep },
+    timeRow: { flexDirection: 'row', alignItems: 'center', marginBottom: 12 },
+    timeScroll: { maxWidth: 130 },
+    timeColon: { fontFamily: FONT.mono, color: t.text, fontSize: 14, fontWeight: '800', marginHorizontal: 4 },
+    timeChip: {
+      paddingHorizontal: 9,
+      paddingVertical: 7,
+      borderRadius: 5,
+      borderWidth: 1,
+      borderColor: t.border,
+      backgroundColor: t.bgDeep,
+      marginRight: 6,
+    },
+    errorText: { fontFamily: FONT.mono, color: t.error, fontSize: 9.5, marginBottom: 10 },
+    saveBtn: {
+      backgroundColor: t.accent,
+      borderRadius: 6,
+      paddingVertical: 11,
+      alignItems: 'center',
+    },
+    saveBtnDisabled: { opacity: 0.6 },
+    saveBtnText: { fontFamily: FONT.mono, color: t.bgDeep, fontSize: 11, fontWeight: '900', letterSpacing: 1 },
+  } as const);

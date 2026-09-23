@@ -155,6 +155,47 @@ export interface DaveProject {
   previewHtml: string;
 }
 
+/** When the routine fires: a fixed daily time, a specific weekday+time, or a one-shot date. */
+export type RoutineTriggerType = 'daily' | 'weekly' | 'once';
+
+export interface RoutineTrigger {
+  type: RoutineTriggerType;
+  /** 0-23, local time. */
+  hour: number;
+  /** 0-59. */
+  minute: number;
+  /** 1 (Sunday) – 7 (Saturday), expo-notifications' weekday convention. Required for 'weekly'. */
+  weekday?: number;
+  /** ISO date (YYYY-MM-DD), required for 'once'. */
+  date?: string;
+}
+
+/** What the routine actually does once it fires. Every action reuses an
+    existing, already-real service — no simulated action exists here. */
+export type RoutineActionType =
+  | 'morning_briefing'
+  | 'organize_files'
+  | 'check_emails'
+  | 'web_search'
+  | 'reminder';
+
+export interface RoutineAction {
+  type: RoutineActionType;
+  /** Free text for 'reminder', or the fixed query for 'web_search'. Unused by the other action types. */
+  payload?: string;
+}
+
+export interface AutomationRoutine {
+  id: string;
+  name: string;
+  trigger: RoutineTrigger;
+  action: RoutineAction;
+  enabled: boolean;
+  createdAt: number;
+  lastRunAt?: number;
+}
+
+
 export interface PatchLog {
   id: string;
   timestamp: number;

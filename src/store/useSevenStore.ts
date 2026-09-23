@@ -15,6 +15,7 @@ import {
   GoogleWorkspaceState,
   InstagramState,
   ResearchDocument,
+  AutomationRoutine,
 } from '../types';
 import { JARVIS_VOICE_MODELS, fishVoiceFor } from '../services/fishAudioService';
 
@@ -34,6 +35,7 @@ interface SevenState {
   googleState: GoogleWorkspaceState;
   instagramState: InstagramState;
   researchDocs: ResearchDocument[];
+  automationRoutines: AutomationRoutine[];
   isInitialized: boolean;
 
   // Actions
@@ -67,6 +69,9 @@ interface SevenState {
   updateGoogleState: (updates: Partial<GoogleWorkspaceState>) => void;
   updateInstagramState: (updates: Partial<InstagramState>) => void;
   addResearchDoc: (doc: ResearchDocument) => void;
+  addAutomationRoutine: (routine: AutomationRoutine) => void;
+  updateAutomationRoutine: (id: string, updates: Partial<AutomationRoutine>) => void;
+  deleteAutomationRoutine: (id: string) => void;
 }
 
 const SECURE_STORE_KEY = 'seven_assistant_config_v3';
@@ -242,6 +247,7 @@ export const useSevenStore = create<SevenState>((set, get) => ({
   googleState: defaultGoogleState,
   instagramState: defaultInstagramState,
   researchDocs: [],
+  automationRoutines: [],
   isInitialized: false,
 
   setConfig: async (updates) => {
@@ -310,6 +316,7 @@ export const useSevenStore = create<SevenState>((set, get) => ({
         daveProjects,
         patchLogs,
         researchDocs,
+        automationRoutines,
       ] = await Promise.all([
         readPersistedSlice<ChatMessage[]>('chatHistory', initialChatHistory),
         readPersistedSlice<ChatSession[]>('chatSessions', []),
@@ -318,6 +325,7 @@ export const useSevenStore = create<SevenState>((set, get) => ({
         readPersistedSlice<DaveProject[]>('daveProjects', []),
         readPersistedSlice<PatchLog[]>('patchLogs', []),
         readPersistedSlice<ResearchDocument[]>('researchDocs', []),
+        readPersistedSlice<AutomationRoutine[]>('automationRoutines', []),
       ]);
 
       const activeDave = daveProjects.length > 0 ? daveProjects[0] : null;
@@ -345,6 +353,7 @@ export const useSevenStore = create<SevenState>((set, get) => ({
         activeDaveProject: activeDave,
         patchLogs,
         researchDocs,
+        automationRoutines,
         isInitialized: true,
       });
     } catch (e) {
@@ -604,5 +613,31 @@ export const useSevenStore = create<SevenState>((set, get) => ({
       const researchDocs = [doc, ...state.researchDocs.filter((d) => d.id !== doc.id)].slice(0, 20);
       persistSlice('researchDocs', researchDocs);
       return { researchDocs };
+    }),
+
+  addAutomationRoutine: (routine) =>
+    set((state) => {
+      const automationRoutines = [
+        routine,
+        ...state.automationRoutines.filter((r) => r.id !== routine.id),
+      ];
+      persistSlice('automationRoutines', automationRoutines);
+      return { automationRoutines };
+    }),
+
+  updateAutomationRoutine: (id, updates) =>
+    set((state) => {
+      const automationRoutines = state.automationRoutines.map((r) =>
+        r.id === id ? { ...r, ...updates } : r
+      );
+      persistSlice('automationRoutines', automationRoutines);
+      return { automationRoutines };
+    }),
+
+  deleteAutomationRoutine: (id) =>
+    set((state) => {
+      const automationRoutines = state.automationRoutines.filter((r) => r.id !== id);
+      persistSlice('automationRoutines', automationRoutines);
+      return { automationRoutines };
     }),
 }));

@@ -2,6 +2,7 @@ import React, { useEffect, useState } from 'react';
 import { useRouter, usePathname } from 'expo-router';
 import { Platform, View, StyleSheet } from 'react-native';
 import * as Updates from 'expo-updates';
+import * as Notifications from 'expo-notifications';
 import { Stack } from 'expo-router';
 import { StatusBar } from 'expo-status-bar';
 import { useFonts } from 'expo-font';
@@ -9,6 +10,7 @@ import { SafeAreaProvider, useSafeAreaInsets } from 'react-native-safe-area-cont
 import { ShareIntentProvider } from 'expo-share-intent';
 import { useSevenStore } from '../src/store/useSevenStore';
 import { fileOrganizer } from '../src/services/fileOrganizer';
+import { routineService } from '../src/services/routineService';
 import { ThemeProvider, PALETTES } from '../src/theme/theme';
 import type { Palette } from '../src/theme/theme';
 import { installWebFonts, NATIVE_FONT_MAP } from '../src/theme/typography';
@@ -48,6 +50,29 @@ export default function RootLayout() {
       );
     }
   }, [loadSavedConfig]);
+
+  // Automation routines fire as OS local notifications (see routineService);
+  // tapping one — or the app simply being cold-launched by the OS from it —
+  // is what actually runs the routine's action. Both the live listener
+  // (app already running) and the last-response check (app was launched by
+  // the tap) funnel into the same handler so a routine never runs twice for
+  // one notification.
+  useEffect(() => {
+    if (Platform.OS === 'web') return;
+
+    const runFromResponse = (response: Notifications.NotificationResponse | null) => {
+      const data = response?.notification.request.content.data as Record<string, unknown> | undefined;
+      routineService.handleNotificationResponse(data).then(({ ran, outcome }) => {
+        if (ran && outcome) {
+          useSevenStore.getState().addTerminalLog(`ROUTINE: ${outcome}`, 'success');
+        }
+      });
+    };
+
+    Notifications.getLastNotificationResponseAsync().then(runFromResponse);
+    const subscription = Notifications.addNotificationResponseReceivedListener(runFromResponse);
+    return () => subscription.remove();
+  }, []);
 
   // Redirect to onboarding until the assistant has been configured
   useEffect(() => {
@@ -118,6 +143,7 @@ const RootFrame: React.FC<{ palette: Palette }> = ({ palette }) => {
           <Stack.Screen name="organizer" />
           <Stack.Screen name="dave" />
           <Stack.Screen name="research" />
+          <Stack.Screen name="routines" />
           <Stack.Screen name="settings" />
         </Stack>
       </View>
