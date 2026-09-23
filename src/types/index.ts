@@ -92,7 +92,8 @@ export interface ChatMessage {
       | 'vision'
       | 'document_analyze'
       | 'memory'
-      | 'code_sandbox';
+      | 'code_sandbox'
+      | 'routine';
     status: 'running' | 'completed' | 'failed';
     summary?: string;
     result?: unknown;

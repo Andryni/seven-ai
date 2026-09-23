@@ -29,6 +29,7 @@ import {
   Globe,
   Smartphone,
   Camera,
+  Clock,
 } from 'lucide-react-native';
 
 interface ChatBubbleProps {
@@ -205,6 +206,7 @@ export const ChatBubble: React.FC<ChatBubbleProps> = ({ message, onAction }) => 
               {message.toolCall.name === 'web_search' && <Globe size={14} color="#38BDF8" />}
               {message.toolCall.name === 'device_action' && <Smartphone size={14} color="#FBBF24" />}
               {message.toolCall.name === 'vision' && <Camera size={14} color="#00E5FF" />}
+              {message.toolCall.name === 'routine' && <Clock size={14} color="#FBBF24" />}
 
               <Text style={styles.toolTitle}>
                 {message.toolCall.name === 'dave_build' && 'DAVE AGENT // WEB SYNTHESIS'}
@@ -214,6 +216,7 @@ export const ChatBubble: React.FC<ChatBubbleProps> = ({ message, onAction }) => 
                 {message.toolCall.name === 'web_search' && 'WEB INTELLIGENCE // LIVE SEARCH'}
                 {message.toolCall.name === 'device_action' && 'DEVICE MATRIX // NATIVE ACTION'}
                 {message.toolCall.name === 'vision' && 'SEVEN VISION // MULTIMODAL OCULAR'}
+                {message.toolCall.name === 'routine' && 'AUTOMATION ENGINE // ROUTINE'}
               </Text>
 
               <View
@@ -287,6 +290,17 @@ export const ChatBubble: React.FC<ChatBubbleProps> = ({ message, onAction }) => 
                 >
                   <ShieldCheck size={12} color="#FFF" />
                   <Text style={styles.actionBtnTextWhite}>Inspect Patch Log</Text>
+                </TouchableOpacity>
+              )}
+
+              {message.toolCall.name === 'routine' && (
+                <TouchableOpacity
+                  style={styles.actionBtnGold}
+                  accessibilityLabel="Manage routines"
+                  onPress={() => onAction?.('open_routines', message.toolCall)}
+                >
+                  <Clock size={12} color="#000" />
+                  <Text style={styles.actionBtnTextDark}>Manage Routines</Text>
                 </TouchableOpacity>
               )}
             </View>

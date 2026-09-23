@@ -13,6 +13,7 @@ import { sandboxService } from '../services/sandboxService';
 import { memoryService } from '../services/memoryService';
 import { contactsService, ResolvedContact } from '../services/contactsService';
 import { calendarService } from '../services/calendarService';
+import { routineService, validateTrigger } from '../services/routineService';
 
 /**
  * Tool declarations and execution, split out of `sevenAgent.ts`.
@@ -239,6 +240,58 @@ export const TOOL_DECLARATIONS: FunctionDeclaration[] = [
         query: { type: Type.STRING, description: 'Topic or question to look up in memory.' },
       },
       required: ['query'],
+    },
+  },
+  {
+    name: 'create_routine',
+    description:
+      'Schedule a recurring or one-time automation routine (e.g. "every day at 8am run my briefing", "every Monday at 9 check my emails", "remind me tomorrow at 5pm to call the bank"). The routine fires as a real device notification at the given time; tapping it (or reopening the app right after) runs the action.',
+    parameters: {
+      type: Type.OBJECT,
+      properties: {
+        name: { type: Type.STRING, description: 'Short human name for the routine.' },
+        trigger_type: {
+          type: Type.STRING,
+          enum: ['daily', 'weekly', 'once'],
+          description: '"daily" repeats every day, "weekly" repeats on one weekday, "once" fires a single time.',
+        },
+        hour: { type: Type.NUMBER, description: 'Hour of day, 0-23, in the user\'s local time.' },
+        minute: { type: Type.NUMBER, description: 'Minute of the hour, 0-59. Defaults to 0.' },
+        weekday: {
+          type: Type.NUMBER,
+          description: 'Required when trigger_type is "weekly": 1=Sunday, 2=Monday, ... 7=Saturday.',
+        },
+        date: {
+          type: Type.STRING,
+          description: 'Required when trigger_type is "once": an ISO date YYYY-MM-DD in the future.',
+        },
+        action_type: {
+          type: Type.STRING,
+          enum: ['morning_briefing', 'organize_files', 'check_emails', 'web_search', 'reminder'],
+          description: 'What SEVEN should actually do when the routine fires.',
+        },
+        payload: {
+          type: Type.STRING,
+          description: 'Extra detail for the action: the search query for "web_search", or the reminder text for "reminder".',
+        },
+      },
+      required: ['name', 'trigger_type', 'hour', 'action_type'],
+    },
+  },
+  {
+    name: 'list_routines',
+    description: 'List the automation routines the user has already scheduled, with their next trigger and enabled state.',
+    parameters: { type: Type.OBJECT, properties: {} },
+  },
+  {
+    name: 'delete_routine',
+    description: 'Cancel and remove an automation routine by name.',
+    parameters: {
+      type: Type.OBJECT,
+      properties: {
+        name: { type: Type.STRING, description: 'The name of the routine to delete (case-insensitive, partial match allowed).' },
+      },
+      required: ['name'],
     },
   },
 ];
@@ -722,6 +775,107 @@ onEvent?: (line: string) => void
           name: 'memory',
           status: 'completed',
           summary: `Recalled ${results.length} memory records`,
+        },
+      };
+    }
+
+    case 'create_routine': {
+      onEvent?.('AUTOMATION ENGINE: scheduling routine...');
+      const store = useSevenStore.getState();
+      const language = (store.config.language || 'en') === 'fr' ? 'fr' : 'en';
+
+      const routineName = String(args.name || 'Untitled routine').trim() || 'Untitled routine';
+      const triggerType = String(args.trigger_type || 'daily') as 'daily' | 'weekly' | 'once';
+      const hour = Math.trunc(Number(args.hour));
+      const minute = Number.isFinite(Number(args.minute)) ? Math.trunc(Number(args.minute)) : 0;
+      const actionType = String(args.action_type || 'reminder') as
+        | 'morning_briefing'
+        | 'organize_files'
+        | 'check_emails'
+        | 'web_search'
+        | 'reminder';
+      const payload = args.payload !== undefined ? String(args.payload) : undefined;
+
+      const routine = {
+        id: `routine-${Date.now()}-${Math.random().toString(36).slice(2, 7)}`,
+        name: routineName,
+        trigger: {
+          type: triggerType,
+          hour,
+          minute,
+          weekday: args.weekday !== undefined ? Math.trunc(Number(args.weekday)) : undefined,
+          date: args.date !== undefined ? String(args.date) : undefined,
+        },
+        action: { type: actionType, payload },
+        enabled: true,
+        createdAt: Date.now(),
+      };
+
+      const result = await routineService.scheduleRoutine(routine, language);
+      if (result === 'invalid') {
+        const reason = validateTrigger(routine.trigger) ?? 'Invalid schedule.';
+        return { text: `I couldn't schedule "${routineName}": ${reason}` };
+      }
+      if (result === 'unsupported') {
+        return { text: 'Local notifications are unavailable on this platform, so I cannot schedule that routine here.' };
+      }
+
+      // Every other outcome ('scheduled', 'denied', 'failed') is worth
+      // keeping around: a denied/failed routine can be retried later (from
+      // Settings permissions, or by re-saving) without the user having to
+      // redescribe it from scratch.
+      store.addAutomationRoutine(routine);
+
+      if (result === 'denied') {
+        return { text: `I saved "${routineName}", but notification permission was denied, so it will not actually fire until you grant it in Settings.` };
+      }
+      if (result === 'failed') {
+        return { text: `I saved "${routineName}", but could not reach the scheduler to arm it. Try again in a moment or from the Routines screen.` };
+      }
+
+      return {
+        text: `Routine "${routineName}" is scheduled.`,
+        toolCall: {
+          name: 'routine',
+          status: 'completed',
+          summary: `Scheduled "${routineName}" (${triggerType}, ${String(hour).padStart(2, '0')}:${String(minute).padStart(2, '0')})`,
+        },
+      };
+    }
+
+    case 'list_routines': {
+      const routines = useSevenStore.getState().automationRoutines;
+      if (routines.length === 0) {
+        return { text: 'No automation routines are scheduled yet.' };
+      }
+      const lines = routines.map((r) => {
+        const time = `${String(r.trigger.hour).padStart(2, '0')}:${String(r.trigger.minute).padStart(2, '0')}`;
+        const when =
+          r.trigger.type === 'weekly'
+            ? `every weekday #${r.trigger.weekday} at ${time}`
+            : r.trigger.type === 'once'
+              ? `on ${r.trigger.date} at ${time}`
+              : `daily at ${time}`;
+        return `- ${r.name} (${r.enabled ? 'enabled' : 'disabled'}): ${r.action.type} ${when}`;
+      });
+      return { text: `Scheduled routines:\n${lines.join('\n')}` };
+    }
+
+    case 'delete_routine': {
+      const query = String(args.name || '').trim().toLowerCase();
+      const store = useSevenStore.getState();
+      const match = store.automationRoutines.find((r) => r.name.toLowerCase().includes(query));
+      if (!match) {
+        return { text: `I couldn't find a routine matching "${args.name}".` };
+      }
+      await routineService.cancelRoutine(match.id);
+      store.deleteAutomationRoutine(match.id);
+      return {
+        text: `Routine "${match.name}" has been deleted.`,
+        toolCall: {
+          name: 'routine',
+          status: 'completed',
+          summary: `Deleted routine "${match.name}"`,
         },
       };
     }

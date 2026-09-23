@@ -521,6 +521,9 @@ export default function ChatScreen() {
       case 'inspect_patch':
         setShowSelfHealingModal(true);
         break;
+      case 'open_routines':
+        router.push('/routines');
+        break;
     }
   };
 
