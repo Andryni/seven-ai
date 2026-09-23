@@ -4,7 +4,10 @@ import { useSevenStore } from '../store/useSevenStore';
 import { useTelemetry } from '../hooks/useTelemetry';
 import { useTheme, useThemeStyles } from '../theme/theme';
 import type { Palette } from '../theme/theme';
-import { Shield, Cpu, Wifi, BatteryCharging, Zap } from 'lucide-react-native';
+import { t } from '../theme/i18n';
+import { openRouterService } from '../services/openRouterService';
+import { buildBrainReadout } from '../core/brainTelemetry';
+import { Shield, Cpu, Wifi, BatteryCharging, Zap, BrainCircuit } from 'lucide-react-native';
 import { FONT, TABULAR } from '../theme/typography';
 
 interface HudHeaderProps {
@@ -14,6 +17,7 @@ interface HudHeaderProps {
 export const HudHeader: React.FC<HudHeaderProps> = ({ onPressStatus }) => {
   const config = useSevenStore((s) => s.config);
   const status = useSevenStore((s) => s.status);
+  const brainTelemetry = useSevenStore((s) => s.brainTelemetry);
   const telemetry = useTelemetry();
 
   const palette = useTheme();
@@ -48,6 +52,37 @@ export const HudHeader: React.FC<HudHeaderProps> = ({ onPressStatus }) => {
     .toUpperCase()
     .split('')
     .join(' ');
+
+  /**
+   * Which brain will / did answer — permanently visible, per the HUD's role as
+   * a status instrument: the Gemini / OpenRouter / local switch used to be
+   * visible only in Settings and in the terminal log after the fact.
+   */
+  const lang = config.language === 'fr' ? 'fr' : 'en';
+  const brain = buildBrainReadout({
+    // Same readiness checks the agent uses before choosing a brain, so the pill
+    // never claims a provider the next message would not actually use.
+    geminiReady: (config.geminiApiKey || '').trim().length > 5,
+    openRouterReady: openRouterService.isConfigured(config.openRouterKey),
+    telemetry: brainTelemetry,
+  });
+
+  const brainColor =
+    brain.provider === 'gemini'
+      ? palette.accent
+      : brain.provider === 'openrouter'
+      ? palette.warning
+      : palette.error;
+
+  const brainLabel =
+    (brain.measured ? t('hud.brain.active', lang) : t('hud.brain.pending', lang)).replace(
+      '{brain}',
+      [brain.providerLabel, brain.modelLabel].filter(Boolean).join(' ')
+    ) +
+    (brain.latencyLabel
+      ? `, ${t('hud.brain.latency', lang).replace('{value}', brain.latencyLabel)}`
+      : '') +
+    (brain.tokenLabel ? `, ${t('hud.brain.tokens', lang).replace('{value}', brain.tokenLabel)}` : '');
 
   const getStatusColor = () => {
     switch (status) {
@@ -141,6 +176,39 @@ export const HudHeader: React.FC<HudHeaderProps> = ({ onPressStatus }) => {
             <Zap size={11} color={palette.accent} />
             <Text style={styles.clockText}>{timeStr}</Text>
           </View>
+        </View>
+      </View>
+
+      {/* Brain readout: colour encodes the engine, the numbers are measured */}
+      <View style={styles.brainRow}>
+        <View
+          style={[styles.brainPill, { borderColor: brainColor }]}
+          accessibilityLabel={brainLabel}
+          accessibilityRole="text"
+          testID="hud-brain-readout"
+        >
+          <BrainCircuit size={11} color={brainColor} />
+          <Text
+            style={[styles.brainProvider, { color: brainColor }]}
+            numberOfLines={1}
+          >
+            {brain.providerLabel}
+          </Text>
+          {brain.modelLabel ? (
+            <Text style={styles.brainDetail} numberOfLines={1}>
+              {brain.modelLabel}
+            </Text>
+          ) : null}
+          {brain.latencyLabel ? (
+            <Text style={styles.brainDetail} numberOfLines={1}>
+              · {brain.latencyLabel}
+            </Text>
+          ) : null}
+          {brain.tokenLabel ? (
+            <Text style={styles.brainDetail} numberOfLines={1}>
+              · {brain.tokenLabel} TOK
+            </Text>
+          ) : null}
         </View>
       </View>
     </View>
@@ -237,6 +305,35 @@ const hudStyles = (t: Palette) =>
       color: t.textDim,
       fontSize: 9,
       // Fixed-width digits: the readouts tick every second and must not jitter.
+      fontVariant: TABULAR,
+    },
+    brainRow: {
+      flexDirection: 'row',
+      marginTop: 6,
+    },
+    brainPill: {
+      flexDirection: 'row',
+      alignItems: 'center',
+      paddingHorizontal: 7,
+      paddingVertical: 2,
+      borderRadius: 4,
+      borderWidth: 1,
+      backgroundColor: t.bgElevated,
+      gap: 5,
+      // The pill can carry provider + model + latency + tokens: let it shrink
+      // inside the header instead of pushing the row off-screen.
+      flexShrink: 1,
+    },
+    brainProvider: {
+      fontFamily: FONT.uiMedium,
+      fontSize: 9,
+      fontWeight: '800',
+      letterSpacing: 1.2,
+    },
+    brainDetail: {
+      fontFamily: FONT.mono,
+      color: t.textDim,
+      fontSize: 9,
       fontVariant: TABULAR,
     },
     clockText: {

@@ -53,9 +53,20 @@ export interface LegacyModelParams {
 /** Minimal shape of a `@google/generative-ai` response, reproduced so every
  * call site that does `result.response.text()` / `.candidates` keeps working
  * unchanged against the new SDK's `response.text` / `.candidates` getters. */
+/**
+ * Token accounting as the API reports it. Absent on non-final streamed chunks
+ * and on some safety-blocked responses, which is why every read site treats it
+ * as optional and the HUD shows "unavailable" instead of zero.
+ */
+export interface UsageMetadataLike {
+  promptTokenCount?: number;
+  candidatesTokenCount?: number;
+}
+
 interface LegacyResponseLike {
   text: () => string | undefined;
   candidates?: { content?: { parts?: any[] } }[];
+  usageMetadata?: UsageMetadataLike;
 }
 
 interface LegacyResultLike {
@@ -73,6 +84,7 @@ interface LegacyResultLike {
 interface StreamChunkLike {
   text: () => string | undefined;
   candidates?: { content?: { parts?: any[] } }[];
+  usageMetadata?: UsageMetadataLike;
 }
 
 export interface ResolvedModel {
@@ -82,11 +94,18 @@ export interface ResolvedModel {
   ) => Promise<{ stream: AsyncGenerator<StreamChunkLike> }>;
 }
 
-function wrapResponse(response: { text?: string; candidates?: any[] }): LegacyResultLike {
+function wrapResponse(response: {
+  text?: string;
+  candidates?: any[];
+  usageMetadata?: UsageMetadataLike;
+}): LegacyResultLike {
   return {
     response: {
       text: () => response.text,
       candidates: response.candidates,
+      // Forwarded so callers can report the real cost of a turn (the HUD brain
+      // readout) rather than a made-up number.
+      usageMetadata: response.usageMetadata,
     },
   };
 }
@@ -112,7 +131,11 @@ function makeResolvedModel(ai: GoogleGenAI, modelId: string, params: LegacyModel
       const stream = await ai.models.generateContentStream({ model: modelId, contents, config });
       async function* iterate() {
         for await (const chunk of stream) {
-          yield { text: () => chunk.text, candidates: chunk.candidates };
+          yield {
+            text: () => chunk.text,
+            candidates: chunk.candidates,
+            usageMetadata: chunk.usageMetadata,
+          };
         }
       }
       return { stream: iterate() };

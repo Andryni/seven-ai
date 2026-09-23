@@ -19,6 +19,12 @@ const en: Dict = {
   'dash.modules': 'MODULES',
   'dash.arrange': 'ARRANGE',
   'dash.arrangeDone': 'DONE',
+  // HUD brain readout: brand names are language-neutral, the sentence around
+  // them is not (it is the screen-reader label for the pill).
+  'hud.brain.active': 'Active brain: {brain}',
+  'hud.brain.pending': 'Active brain: {brain} (no request yet)',
+  'hud.brain.latency': '{value} latency',
+  'hud.brain.tokens': '{value} tokens',
   'dash.queued': 'QUEUED',
   'input.placeholder': 'Speak or type a command...',
   'input.attachImage': 'Attach image',
@@ -283,6 +289,10 @@ const fr: Dict = {
   'dash.offlineQueued': 'HORS-LIGNE — commande en attente',
   'dash.modules': 'MODULES',
   'dash.arrange': 'ARRANGER',
+  'hud.brain.active': 'Cerveau actif : {brain}',
+  'hud.brain.pending': 'Cerveau actif : {brain} (aucune requête)',
+  'hud.brain.latency': 'latence {value}',
+  'hud.brain.tokens': '{value} tokens',
   'dash.arrangeDone': 'TERMINER',
   'dash.queued': 'EN ATTENTE',
   'input.placeholder': 'Parlez ou tapez une commande...',

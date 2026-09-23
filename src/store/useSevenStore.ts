@@ -3,6 +3,7 @@ import * as SecureStore from 'expo-secure-store';
 import { Platform } from 'react-native';
 // SDK 57: the classic callback-style API moved to the 'legacy' subpath.
 import * as FileSystem from 'expo-file-system/legacy';
+import type { BrainTurnTelemetry } from '../core/brainTelemetry';
 import {
   AssistantConfig,
   AssistantStatus,
@@ -33,6 +34,13 @@ interface SevenState {
   config: AssistantConfig;
   status: AssistantStatus;
   audioAmplitude: number;
+  /**
+   * What answered the last turn, for the permanent HUD brain readout
+   * (see `core/brainTelemetry.ts`). Runtime-only: stale numbers from a
+   * previous session would misrepresent the current one, and the HUD derives
+   * the configured brain until the first turn completes.
+   */
+  brainTelemetry: BrainTurnTelemetry | null;
   chatHistory: ChatMessage[];
   chatSessions: ChatSession[];
   /** Id of the session mirroring the live chatHistory, if any. */
@@ -53,6 +61,7 @@ interface SevenState {
   loadSavedConfig: () => Promise<void>;
   setStatus: (status: AssistantStatus) => void;
   setAudioAmplitude: (amp: number) => void;
+  setBrainTelemetry: (telemetry: BrainTurnTelemetry) => void;
   addChatMessage: (message: Omit<ChatMessage, 'id' | 'timestamp'>) => ChatMessage;
   updateChatMessage: (id: string, updates: Partial<ChatMessage>) => void;
   clearChat: () => void;
@@ -250,6 +259,7 @@ export const useSevenStore = create<SevenState>((set, get) => ({
   config: defaultConfig,
   status: 'idle',
   audioAmplitude: 0,
+  brainTelemetry: null,
   chatHistory: initialChatHistory,
   chatSessions: [],
   activeChatSessionId: null,
@@ -378,6 +388,7 @@ export const useSevenStore = create<SevenState>((set, get) => ({
 
   setStatus: (status) => set({ status }),
   setAudioAmplitude: (amp) => set({ audioAmplitude: Math.max(0, Math.min(1, amp)) }),
+  setBrainTelemetry: (telemetry) => set({ brainTelemetry: telemetry }),
 
   addChatMessage: (msg) => {
     const newMessage: ChatMessage = {

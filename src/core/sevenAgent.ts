@@ -13,6 +13,7 @@ import { deviceControl } from '../services/deviceControlService';
 import { webSearchService } from '../services/webSearchService';
 import { TOOL_DECLARATIONS, executeTool } from './sevenAgentTools';
 import type { ToolExecutionResult } from './sevenAgentTools';
+import type { BrainProvider } from './brainTelemetry';
 
 /** Shared chat result shape for both buffered and streaming paths. */
 export interface ChatResult {
@@ -127,6 +128,7 @@ export class SevenAgent {
         store.addTerminalLog(`OpenRouter fallback failed (${e?.message || e}); using local engine.`, 'warn');
       }
     }
+    const localStartedAt = Date.now();
     try {
       res = await this.chatLocalFallback(userPrompt, quota ? 'quota' : 'offline');
     } catch {
@@ -136,9 +138,60 @@ export class SevenAgent {
           : 'I could not process that command, even in local mode.',
       };
     }
+    // No network involved, so the latency is real work done on-device: showing
+    // it in the HUD is what makes the degraded brain visible at a glance.
+    this.recordBrainTurn({ provider: 'local', startedAt: localStartedAt });
     const text = `${notice}${res.text}`;
     if (onToken) await this.replayAsChunks(text, onToken);
     return { ...res, text };
+  }
+
+  /**
+   * Reads Gemini's usage metadata defensively: streamed chunks and
+   * safety-blocked responses omit it entirely, and a missing count must show
+   * as "unavailable" in the HUD rather than as zero tokens.
+   */
+  private readGeminiUsage(usage?: { promptTokenCount?: number; candidatesTokenCount?: number } | null): {
+    tokensIn?: number;
+    tokensOut?: number;
+  } {
+    return {
+      tokensIn:
+        typeof usage?.promptTokenCount === 'number' && usage.promptTokenCount >= 0
+          ? usage.promptTokenCount
+          : undefined,
+      tokensOut:
+        typeof usage?.candidatesTokenCount === 'number' && usage.candidatesTokenCount >= 0
+          ? usage.candidatesTokenCount
+          : undefined,
+    };
+  }
+
+  /**
+   * Publishes which brain answered the turn, how long the user waited and what
+   * it cost, for the permanent HUD readout (see `brainTelemetry.ts`). Called at
+   * the point an answer is actually produced, so a turn that dies before
+   * anything comes back does not overwrite the previous measurement.
+   */
+  private recordBrainTurn(input: {
+    provider: BrainProvider;
+    /** Epoch ms the turn started, used when `latencyMs` is not given. */
+    startedAt: number;
+    model?: string | undefined;
+    latencyKind?: 'total' | 'first-token';
+    latencyMs?: number | undefined;
+    tokensIn?: number | undefined;
+    tokensOut?: number | undefined;
+  }): void {
+    useSevenStore.getState().setBrainTelemetry({
+      provider: input.provider,
+      model: input.model,
+      latencyMs: Math.max(0, Math.round(input.latencyMs ?? Date.now() - input.startedAt)),
+      latencyKind: input.latencyKind ?? 'total',
+      tokensIn: input.tokensIn,
+      tokensOut: input.tokensOut,
+      at: Date.now(),
+    });
   }
 
   // --------------------------------------------------------------- Gemini AI
@@ -172,7 +225,10 @@ ${notes}`;
         .getState()
         .addTerminalLog(`NEURAL CORE: using fallback model "${modelId}" (primary unavailable)`, 'warn');
     }
-    return model;
+    // The resolved id travels with the model so callers can name the brain that
+    // really answered — logging the fallback and then reporting the primary
+    // model id in the HUD would contradict itself.
+    return { model, modelId };
   }
 
   /**
@@ -225,6 +281,7 @@ ${notes}`;
     const apiKey = (config.openRouterKey || '').trim();
 
     store.addTerminalLog('Gemini unavailable — routing through OpenRouter...', 'cmd');
+    const startedAt = Date.now();
 
     const history = useSevenStore.getState().chatHistory;
     const recent = history
@@ -240,8 +297,20 @@ ${notes}`;
       { role: 'user' as const, content: userPrompt },
     ];
 
-    const text = await openRouterService.chat(apiKey, messages);
-    store.addTerminalLog('OpenRouter response received [200 OK]', 'success');
+    const { text, model, usage } = await openRouterService.chatWithUsage(apiKey, messages);
+    store.addTerminalLog(
+      `OpenRouter response received [200 OK]${model ? ` [${model}]` : ''}`,
+      'success'
+    );
+    // OpenRouter reports the model it routed to (a `openrouter/free` request
+    // does not name one up front) and the billed token counts.
+    this.recordBrainTurn({
+      provider: 'openrouter',
+      startedAt,
+      model,
+      tokensIn: usage?.promptTokens,
+      tokensOut: usage?.completionTokens,
+    });
     return { text };
   }
 
@@ -253,8 +322,12 @@ ${notes}`;
     const config = store.config;
     const apiKey = config.geminiApiKey;
 
-    store.addTerminalLog('Querying Gemini 2.0 Flash neural brain [function calling]...', 'cmd');
-    const model = await this.getModel(apiKey);
+    // The resolved model id is logged by getModel() when the primary model
+    // is unavailable — naming a hardcoded model here would lie as soon as the
+    // fallback list selects a different one.
+    store.addTerminalLog('Querying Gemini neural brain [function calling]...', 'cmd');
+    const startedAt = Date.now();
+    const { model, modelId } = await this.getModel(apiKey);
 
     // Multi-turn context: replay prior exchanges plus the current prompt.
     const history = useSevenStore.getState().chatHistory;
@@ -265,11 +338,19 @@ ${notes}`;
     const functionCallPart: Part | undefined = candidate?.content?.parts?.find(
       (p: any) => p.functionCall
     );
+    const pass1Usage = this.readGeminiUsage(result.response.usageMetadata);
 
     // No tool matched: plain conversational answer.
     if (!functionCallPart?.functionCall) {
       const text = result.response.text() || '';
       store.addTerminalLog('Gemini response received [200 OK]', 'success');
+      this.recordBrainTurn({
+        provider: 'gemini',
+        startedAt,
+        model: modelId,
+        tokensIn: pass1Usage.tokensIn,
+        tokensOut: pass1Usage.tokensOut,
+      });
       return { text };
     }
 
@@ -291,6 +372,15 @@ ${notes}`;
           summary: message,
         },
       };
+      // The tool failed but the brain did answer: keep the HUD honest about
+      // which engine produced this turn.
+      this.recordBrainTurn({
+        provider: 'gemini',
+        startedAt,
+        model: modelId,
+        tokensIn: pass1Usage.tokensIn,
+        tokensOut: pass1Usage.tokensOut,
+      });
       return toolResult;
     }
 
@@ -316,9 +406,28 @@ ${notes}`;
     let lastToolCall = toolResult.toolCall;
     let lastToolText = toolResult.text;
 
+    // Cost of the turn: every Gemini call in the chain is billed separately, so
+    // each pass's usage is added up rather than only the last one's.
+    let turnTokensIn = pass1Usage.tokensIn;
+    let turnTokensOut = pass1Usage.tokensOut;
+    const addUsage = (usage?: { promptTokenCount?: number; candidatesTokenCount?: number } | null) => {
+      const u = this.readGeminiUsage(usage);
+      if (u.tokensIn !== undefined) turnTokensIn = (turnTokensIn ?? 0) + u.tokensIn;
+      if (u.tokensOut !== undefined) turnTokensOut = (turnTokensOut ?? 0) + u.tokensOut;
+    };
+    const recordGeminiToolTurn = () =>
+      this.recordBrainTurn({
+        provider: 'gemini',
+        startedAt,
+        model: modelId,
+        tokensIn: turnTokensIn,
+        tokensOut: turnTokensOut,
+      });
+
     try {
       for (let step = 0; step < MAX_TOOL_STEPS; step++) {
         const followUp = await model.generateContent({ contents: chainContents });
+        addUsage(followUp.response.usageMetadata);
         const cand = followUp.response.candidates?.[0];
         const nextCallPart: Part | undefined = cand?.content?.parts?.find(
           (p: any) => p.functionCall
@@ -326,6 +435,7 @@ ${notes}`;
 
         if (!nextCallPart?.functionCall) {
           const finalText = followUp.response.text() || lastToolText;
+          recordGeminiToolTurn();
           return { text: finalText, toolCall: lastToolCall };
         }
 
@@ -374,9 +484,18 @@ ${notes}`;
           { role: 'user', parts: [{ text: 'Tool chain limit reached. Summarize the completed steps now.' }] },
         ],
       });
+      addUsage(limitFollowUp.response.usageMetadata);
+      recordGeminiToolTurn();
       return { text: limitFollowUp.response.text() || lastToolText, toolCall: lastToolCall };
     } catch (e: any) {
       store.addTerminalLog(`Post-tool synthesis failed (${e?.message || e}); returning raw tool output.`, 'warn');
+      this.recordBrainTurn({
+        provider: 'gemini',
+        startedAt,
+        model: modelId,
+        tokensIn: turnTokensIn,
+        tokensOut: turnTokensOut,
+      });
       return { text: lastToolText, toolCall: lastToolCall };
     }
   }
@@ -398,6 +517,34 @@ ${notes}`;
 
     store.setStatus('thinking');
     store.addTerminalLog(`USER PROMPT: "${userPrompt || (image ? '[Image Analysis]' : '')}"`, 'cmd');
+
+    // --- Brain telemetry (see brainTelemetry.ts) ---
+    // Recorded as soon as the turn's first remote output lands — the HUD should
+    // flip the moment a brain answers, not when a whole tool chain is done —
+    // and updated at the end of a tool turn so the token total covers every
+    // billed call rather than only the first pass.
+    const brainStartedAt = Date.now();
+    let brainFirstTokenAt: number | undefined;
+    let brainStreamed = false;
+    let brainTokensIn: number | undefined;
+    let brainTokensOut: number | undefined;
+    const addGeminiUsage = (usage?: { promptTokenCount?: number; candidatesTokenCount?: number } | null) => {
+      const u = this.readGeminiUsage(usage);
+      if (u.tokensIn !== undefined) brainTokensIn = (brainTokensIn ?? 0) + u.tokensIn;
+      if (u.tokensOut !== undefined) brainTokensOut = (brainTokensOut ?? 0) + u.tokensOut;
+    };
+    const recordGeminiTurn = (modelId: string, latencyMs?: number) =>
+      this.recordBrainTurn({
+        provider: 'gemini',
+        startedAt: brainStartedAt,
+        model: modelId,
+        // A streamed answer reports the wait for its first token (what the user
+        // actually feels); a buffered one reports the whole round-trip.
+        latencyKind: brainStreamed ? 'first-token' : 'total',
+        latencyMs: latencyMs ?? (brainFirstTokenAt ?? Date.now()) - brainStartedAt,
+        tokensIn: brainTokensIn,
+        tokensOut: brainTokensOut,
+      });
 
     try {
       // No Gemini key: try OpenRouter (if the user configured one) before
@@ -425,11 +572,13 @@ ${notes}`;
             store.addTerminalLog(`OpenRouter fallback failed (${e?.message || e}); using local engine.`, 'warn');
           }
         }
+        const localStartedAt = Date.now();
         const res = await this.chatLocalFallback(userPrompt);
+        this.recordBrainTurn({ provider: 'local', startedAt: localStartedAt });
         return res;
       }
 
-      const model = await this.getModel(config.geminiApiKey);
+      const { model, modelId } = await this.getModel(config.geminiApiKey);
 
       // Multi-turn context for pass 1
       const history = useSevenStore.getState().chatHistory;
@@ -467,7 +616,12 @@ ${notes}`;
       let functionCallPart: Part | undefined;
       try {
         const { stream } = await withTransientRetry(() => model.generateContentStream({ contents }));
+        let lastStreamUsage: { promptTokenCount?: number; candidatesTokenCount?: number } | null =
+          null;
         for await (const chunk of stream) {
+          // Usage metadata rides on the final chunk only; the most recent one
+          // wins so a provider sending it mid-stream cannot double-count.
+          if (chunk.usageMetadata) lastStreamUsage = chunk.usageMetadata;
           const chunkCandidate = chunk.candidates?.[0];
           const chunkFunctionCall = chunkCandidate?.content?.parts?.find((p: any) => p.functionCall);
           if (chunkFunctionCall) {
@@ -476,10 +630,13 @@ ${notes}`;
           }
           const chunkText = chunk.text();
           if (chunkText) {
+            if (brainFirstTokenAt === undefined) brainFirstTokenAt = Date.now();
+            brainStreamed = true;
             fullText += chunkText;
             onToken(chunkText);
           }
         }
+        addGeminiUsage(lastStreamUsage);
       } catch (streamErr: any) {
         // A handful of edge cases (safety blocks mid-stream, transient
         // network hiccups after the stream already started) surface here.
@@ -487,6 +644,7 @@ ${notes}`;
         store.addTerminalLog(`Streaming pass 1 failed (${streamErr?.message || streamErr}); retrying buffered.`, 'warn');
         fullText = '';
         const result = await withTransientRetry(() => model.generateContent({ contents }));
+        addGeminiUsage(result.response.usageMetadata);
         const candidate = result.response.candidates?.[0];
         functionCallPart = candidate?.content?.parts?.find((p: any) => p.functionCall);
         if (!functionCallPart?.functionCall) {
@@ -494,6 +652,8 @@ ${notes}`;
           await this.replayAsChunks(fullText, onToken);
         }
       }
+      // The brain has answered pass 1: publish it before any tool work runs.
+      recordGeminiTurn(modelId);
       // A successful remote call ends the current outage: the next failure may
       // state its reason again.
       this.quotaNoticeShown = false;
@@ -553,7 +713,9 @@ ${notes}`;
 
         const stream = await model.generateContentStream(request);
         let fullText = '';
+        let pass2Usage: { promptTokenCount?: number; candidatesTokenCount?: number } | null = null;
         for await (const chunk of stream.stream) {
+          if (chunk.usageMetadata) pass2Usage = chunk.usageMetadata;
           const chunkText = chunk.text();
           if (chunkText) {
             fullText += chunkText;
@@ -564,9 +726,14 @@ ${notes}`;
           fullText = toolResult.text;
           await this.replayAsChunks(fullText, onToken);
         }
+        // Update the readout with the turn's full cost and duration (the tool
+        // execution time is part of the wait the user experienced).
+        addGeminiUsage(pass2Usage);
+        recordGeminiTurn(modelId, Date.now() - brainStartedAt);
         return { text: fullText, toolCall: toolResult.toolCall };
       } catch (e: any) {
         store.addTerminalLog(`Post-tool synthesis failed (${e?.message || e}); returning raw tool output.`, 'warn');
+        recordGeminiTurn(modelId, Date.now() - brainStartedAt);
         await this.replayAsChunks(toolResult.text, onToken);
         return { text: toolResult.text, toolCall: toolResult.toolCall };
       }
@@ -911,7 +1078,9 @@ ${notes}`;
           store.addTerminalLog(`OpenRouter fallback failed (${e?.message || e}); using local engine.`, 'warn');
         }
       }
+      const localStartedAt = Date.now();
       const res = await this.chatLocalFallback(userPrompt);
+      this.recordBrainTurn({ provider: 'local', startedAt: localStartedAt });
       return res;
     } finally {
       store.setStatus('idle');

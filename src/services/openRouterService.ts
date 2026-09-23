@@ -15,6 +15,24 @@ export interface OpenRouterMessage {
   content: string;
 }
 
+/** Token usage as reported by OpenRouter (absent on some routed models). */
+export interface OpenRouterUsage {
+  promptTokens?: number;
+  completionTokens?: number;
+}
+
+export interface OpenRouterResult {
+  text: string;
+  /** Model that actually answered — OpenRouter resolves `openrouter/free` itself. */
+  model?: string;
+  usage?: OpenRouterUsage;
+}
+
+/** Reads a token count defensively: OpenRouter omits or nulls these fields. */
+function readTokenCount(value: unknown): number | undefined {
+  return typeof value === 'number' && Number.isFinite(value) && value >= 0 ? value : undefined;
+}
+
 const ENDPOINT = 'https://openrouter.ai/api/v1/chat/completions';
 
 /** Free-tier router: OpenRouter itself picks an available free model. Kept
@@ -56,12 +74,15 @@ class OpenRouterService {
    * Non-streaming completion — used as SEVEN's fallback brain. Kept
    * deliberately simple (no tool calling): OpenRouter here is a safety net
    * for plain conversation, not a second Director pipeline to maintain.
+   *
+   * Returns the answering model and token usage alongside the text so the HUD
+   * can state which brain answered and what it cost (see brainTelemetry.ts).
    */
-  public async chat(
+  public async chatWithUsage(
     apiKey: string,
     messages: OpenRouterMessage[],
     model: string = DEFAULT_MODEL
-  ): Promise<string> {
+  ): Promise<OpenRouterResult> {
     const res = await fetch(ENDPOINT, {
       method: 'POST',
       headers: {
@@ -83,6 +104,27 @@ class OpenRouterService {
     if (!text || typeof text !== 'string') {
       throw new Error('OpenRouter returned an empty response');
     }
+
+    const promptTokens = readTokenCount(data?.usage?.prompt_tokens);
+    const completionTokens = readTokenCount(data?.usage?.completion_tokens);
+
+    return {
+      text,
+      model: typeof data?.model === 'string' && data.model ? data.model : model,
+      usage:
+        promptTokens === undefined && completionTokens === undefined
+          ? undefined
+          : { promptTokens, completionTokens },
+    };
+  }
+
+  /** Text-only convenience wrapper around `chatWithUsage`. */
+  public async chat(
+    apiKey: string,
+    messages: OpenRouterMessage[],
+    model: string = DEFAULT_MODEL
+  ): Promise<string> {
+    const { text } = await this.chatWithUsage(apiKey, messages, model);
     return text;
   }
 }
