@@ -627,6 +627,13 @@ ${notes}`;
       case 'recall_memories':
       case 'forget_memory':
         return 'memory';
+      case 'create_routine':
+      case 'list_routines':
+      case 'delete_routine':
+        return 'routine';
+      case 'list_calendar_events':
+      case 'create_calendar_event':
+        return 'device_action';
       default:
         return 'organizer';
     }
