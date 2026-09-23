@@ -55,6 +55,14 @@ export interface AssistantConfig {
       (chat header, history actions...) — helps both readability and
       accessibility for anyone unsure what a bare icon does. */
   showIconLabels?: boolean;
+  /** Ambient/decorative motion (particle drift, Gideon's idle sway/halo/
+      hologram sweep, dashboard drag wobble, screen entrance slides).
+      'auto' follows the OS "reduce motion" accessibility setting; 'on'/'off'
+      let the user override it regardless of what the OS reports. Motion
+      that carries information (loading spinners, the mic waveform, Gideon's
+      blinks/expressions/lip-sync) is never affected — only ambient loops
+      that exist purely for atmosphere are. */
+  reduceMotion?: 'auto' | 'on' | 'off';
   isConfigured: boolean;
 }
 

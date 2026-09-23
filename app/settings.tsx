@@ -489,6 +489,39 @@ export default function SettingsScreen() {
               thumbColor="#FFF"
             />
           </View>
+
+          {/* Reduce motion — 'auto' trusts the OS accessibility setting
+              (AccessibilityInfo.isReduceMotionEnabled, live-updated); 'on'/
+              'off' override it. Only ambient/decorative loops are affected —
+              blinking, expressions, lip-sync and loading feedback never stop. */}
+          <View style={[styles.appearanceRow, styles.appearanceRowSpaced]}>
+            <Text style={styles.inputLabel}>{t('settings.reduceMotion', lang).toUpperCase()}</Text>
+            <View style={styles.chipRow}>
+              {(['auto', 'on', 'off'] as const).map((mode) => (
+                <TouchableOpacity
+                  key={mode}
+                  style={[styles.langChip, (config.reduceMotion ?? 'auto') === mode && styles.langChipActive]}
+                  accessibilityLabel={t(`settings.reduceMotion.${mode}`, lang)}
+                  accessibilityRole="button"
+                  accessibilityState={{ selected: (config.reduceMotion ?? 'auto') === mode }}
+                  onPress={() => {
+                    haptics.light();
+                    setConfig({ reduceMotion: mode });
+                  }}
+                >
+                  <Text
+                    style={[
+                      styles.langChipText,
+                      (config.reduceMotion ?? 'auto') === mode && styles.langChipTextActive,
+                    ]}
+                  >
+                    {t(`settings.reduceMotion.${mode}`, lang)}
+                  </Text>
+                </TouchableOpacity>
+              ))}
+            </View>
+            <Text style={styles.avatarEngineHint}>{t('settings.reduceMotionHint', lang)}</Text>
+          </View>
         </View>
 
         {/* Section 1: Connectors & Integrations */}

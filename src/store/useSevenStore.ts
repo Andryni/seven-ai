@@ -113,6 +113,7 @@ const defaultConfig: AssistantConfig = {
   wakeWordEnabled: false,
   gyroEnabled: true,
   showIconLabels: false,
+  reduceMotion: 'auto',
   isConfigured: false,
 };
 

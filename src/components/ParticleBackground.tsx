@@ -3,6 +3,7 @@ import { View, Dimensions, Animated, Easing } from 'react-native';
 import Svg, { Circle, Defs, RadialGradient, Stop } from 'react-native-svg';
 import { useTheme, useThemeStyles } from '../theme/theme';
 import type { Palette } from '../theme/theme';
+import { useReducedMotion } from '../hooks/useReducedMotion';
 
 const WINDOW = Dimensions.get('window');
 
@@ -80,6 +81,11 @@ export const ParticleBackground: React.FC<{ children?: React.ReactNode }> = ({ c
   const palette = useTheme();
   const styles = useThemeStyles(particleStyles);
   const [height, setHeight] = useState(WINDOW.height || 800);
+  // Purely ambient/decorative motion — the dust drift and the glow's breathing
+  // add zero information. Honoring "reduce motion" here removes the biggest,
+  // most persistent animation in the app (it renders behind every screen)
+  // for anyone who finds continuous background motion uncomfortable.
+  const reduceMotion = useReducedMotion();
 
   const driftFar = useMemo(() => new Animated.Value(0), []);
   const driftNear = useMemo(() => new Animated.Value(0), []);
@@ -87,6 +93,11 @@ export const ParticleBackground: React.FC<{ children?: React.ReactNode }> = ({ c
 
   // Dust rises slowly, forever, at two speeds for a parallax read.
   useEffect(() => {
+    if (reduceMotion) {
+      driftFar.setValue(0);
+      driftNear.setValue(0);
+      return;
+    }
     const far = Animated.loop(
       Animated.timing(driftFar, {
         toValue: 1,
@@ -109,10 +120,14 @@ export const ParticleBackground: React.FC<{ children?: React.ReactNode }> = ({ c
       far.stop();
       near.stop();
     };
-  }, [driftFar, driftNear]);
+  }, [driftFar, driftNear, reduceMotion]);
 
   // The core glow breathes, so the backdrop is never perfectly still.
   useEffect(() => {
+    if (reduceMotion) {
+      breathe.setValue(1);
+      return;
+    }
     const loop = Animated.loop(
       Animated.sequence([
         Animated.timing(breathe, {
@@ -131,7 +146,7 @@ export const ParticleBackground: React.FC<{ children?: React.ReactNode }> = ({ c
     );
     loop.start();
     return () => loop.stop();
-  }, [breathe]);
+  }, [breathe, reduceMotion]);
 
   const farColors = useMemo(
     () => [palette.orbOuter, palette.orbInner, palette.info],

@@ -13,6 +13,7 @@ import Svg, {
 } from 'react-native-svg';
 import { AssistantStatus } from '../types';
 import { useTheme } from '../theme/theme';
+import { useReducedMotion } from '../hooks/useReducedMotion';
 import { computeGideonHue } from './gideonHue';
 import { HEAD_PATH, NECK_PATH, BUST_PATH, COLUMN_PATH, SCAN_LINES, LANDMARKS } from './gideonGeometry';
 import { VISEME_SHAPES, VisemeId, textToVisemes } from '../core/visemes';
@@ -86,6 +87,12 @@ export const GideonAvatar: React.FC<GideonAvatarProps> = ({
     [status, themeColor, palette]
   );
 
+  // Only the ambient, purely decorative loops below (idle bob/sway, halo
+  // breathing, projector ring spin, hologram rebuild sweep, flicker) are
+  // gated by this — blinking, saccades, expressions and lip-sync all keep
+  // running since they carry real information (attention, mood, speech).
+  const reduceMotion = useReducedMotion();
+
   // ------------------------------------------------------------- Animated set
   const boot = useMemo(() => new Animated.Value(0), []);
   const bob = useMemo(() => new Animated.Value(0), []);
@@ -124,6 +131,12 @@ export const GideonAvatar: React.FC<GideonAvatarProps> = ({
 
   // Floating bob + halo breathing + idle head sway.
   useEffect(() => {
+    if (reduceMotion) {
+      bob.setValue(0);
+      halo.setValue(0);
+      sway.setValue(0);
+      return;
+    }
     const bobLoop = Animated.loop(
       Animated.sequence([
         Animated.timing(bob, {
@@ -182,10 +195,15 @@ export const GideonAvatar: React.FC<GideonAvatarProps> = ({
       haloLoop.stop();
       swayLoop.stop();
     };
-  }, [bob, halo, sway, hue.speed]);
+  }, [bob, halo, sway, hue.speed, reduceMotion]);
 
   // HUD projector rings — slow counter-rotation.
   useEffect(() => {
+    if (reduceMotion) {
+      spinA.setValue(0);
+      spinB.setValue(0);
+      return;
+    }
     const loopA = Animated.loop(
       Animated.timing(spinA, {
         toValue: 1,
@@ -208,10 +226,15 @@ export const GideonAvatar: React.FC<GideonAvatarProps> = ({
       loopA.stop();
       loopB.stop();
     };
-  }, [spinA, spinB, hue.speed]);
+  }, [spinA, spinB, hue.speed, reduceMotion]);
 
   // Vertical hologram sweep (head rebuild pass).
   useEffect(() => {
+    if (reduceMotion) {
+      sweep.setValue(0);
+      sweepEcho.setValue(0);
+      return;
+    }
     const makeSweep = (value: Animated.Value, duration: number) =>
       Animated.loop(
         Animated.sequence([
@@ -237,10 +260,15 @@ export const GideonAvatar: React.FC<GideonAvatarProps> = ({
       loop.stop();
       echo.stop();
     };
-  }, [sweep, sweepEcho, hue.speed]);
+  }, [sweep, sweepEcho, hue.speed, reduceMotion]);
 
-  // Projection flicker — subtle, never epileptic.
+  // Projection flicker — subtle, never epileptic. Purely atmospheric, so it
+  // is one of the first things to go under reduce-motion.
   useEffect(() => {
+    if (reduceMotion) {
+      flicker.setValue(1);
+      return;
+    }
     const loop = Animated.loop(
       Animated.sequence([
         Animated.timing(flicker, { toValue: 0.9, duration: 70, useNativeDriver: true }),
@@ -251,7 +279,7 @@ export const GideonAvatar: React.FC<GideonAvatarProps> = ({
     );
     loop.start();
     return () => loop.stop();
-  }, [flicker]);
+  }, [flicker, reduceMotion]);
 
   // Blinking and looking. A metronome blink over a sine-wave gaze is exactly
   // what makes a rendered face read as a mannequin: real eyes blink at uneven

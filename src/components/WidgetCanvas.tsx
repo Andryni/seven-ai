@@ -4,6 +4,7 @@ import { EyeOff } from 'lucide-react-native';
 import type { Palette } from '../theme/theme';
 import { haptics } from '../services/hapticsService';
 import { FONT } from '../theme/typography';
+import { useReducedMotion } from '../hooks/useReducedMotion';
 
 /** One module on the dashboard deck. */
 export interface WidgetSpec {
@@ -65,7 +66,8 @@ interface CanvasWidgetProps {
   onHide?: (id: string) => void;
 }
 
-const CanvasWidget: React.FC<CanvasWidgetProps> = ({
+/** Exported for reduce-motion testing; not part of the public widget API. */
+export const CanvasWidget: React.FC<CanvasWidgetProps> = ({
   spec,
   index,
   position,
@@ -81,6 +83,11 @@ const CanvasWidget: React.FC<CanvasWidgetProps> = ({
   const entry = useMemo(() => new Animated.Value(0), []);
   const jiggle = useMemo(() => new Animated.Value(0), []);
   const [dragging, setDragging] = useState(false);
+  // The settle-to-position spring below carries real information (it shows
+  // where the tile actually is) and always runs. The staggered entrance and
+  // the ARRANGE-mode wobble are pure flourish, so they are the two dropped
+  // under reduce-motion.
+  const reduceMotion = useReducedMotion();
 
   const travelX = Math.max(1, canvasWidth - width);
   const travelY = Math.max(1, CANVAS_HEIGHT - height);
@@ -99,6 +106,10 @@ const CanvasWidget: React.FC<CanvasWidgetProps> = ({
 
   // Staggered materialisation: the deck assembles instead of appearing.
   useEffect(() => {
+    if (reduceMotion) {
+      entry.setValue(1);
+      return;
+    }
     const timer = setTimeout(() => {
       Animated.timing(entry, {
         toValue: 1,
@@ -108,11 +119,13 @@ const CanvasWidget: React.FC<CanvasWidgetProps> = ({
       }).start();
     }, index * 70);
     return () => clearTimeout(timer);
-  }, [entry, index]);
+  }, [entry, index, reduceMotion]);
 
   // ARRANGE mode: everything wobbles so it is obvious the deck is loose.
+  // Under reduce-motion the (non-animated) border/label change on the tile
+  // is what communicates edit mode instead — see the `editing` styling below.
   useEffect(() => {
-    if (!editing) {
+    if (!editing || reduceMotion) {
       jiggle.setValue(0);
       return;
     }
@@ -138,7 +151,7 @@ const CanvasWidget: React.FC<CanvasWidgetProps> = ({
       clearTimeout(timer);
       loop.stop();
     };
-  }, [editing, jiggle, index]);
+  }, [editing, jiggle, index, reduceMotion]);
 
   const responder = useMemo(
     () =>

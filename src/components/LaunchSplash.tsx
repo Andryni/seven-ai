@@ -4,6 +4,7 @@ import Svg, { Circle, Defs, RadialGradient, Stop } from 'react-native-svg';
 import { useTheme, useThemeStyles } from '../theme/theme';
 import type { Palette } from '../theme/theme';
 import { FONT } from '../theme/typography';
+import { useReducedMotion } from '../hooks/useReducedMotion';
 
 const { width: SCREEN_WIDTH } = Dimensions.get('window');
 
@@ -36,6 +37,10 @@ export const LaunchSplash: React.FC<LaunchSplashProps> = ({ onFinish }) => {
   const ringSpin = useMemo(() => new Animated.Value(0), []);
   const barFill = useMemo(() => new Animated.Value(0), []);
   const [step, setStep] = useState(0);
+  // The boot log and progress fill communicate real state (the app is
+  // loading) and always run; the continuous dual-ring spin is pure
+  // flourish and is the only thing dropped here under reduce-motion.
+  const reduceMotion = useReducedMotion();
 
   useEffect(() => {
     // Entrance
@@ -55,15 +60,17 @@ export const LaunchSplash: React.FC<LaunchSplashProps> = ({ onFinish }) => {
     ]).start();
 
     // Continuous ring spin
-    const spinLoop = Animated.loop(
-      Animated.timing(ringSpin, {
-        toValue: 1,
-        duration: 2600,
-        easing: Easing.linear,
-        useNativeDriver: true,
-      })
-    );
-    spinLoop.start();
+    const spinLoop = reduceMotion
+      ? null
+      : Animated.loop(
+          Animated.timing(ringSpin, {
+            toValue: 1,
+            duration: 2600,
+            easing: Easing.linear,
+            useNativeDriver: true,
+          })
+        );
+    spinLoop?.start();
 
     // Progress bar fill (width animation -> not native driver)
     Animated.timing(barFill, {
@@ -92,10 +99,10 @@ export const LaunchSplash: React.FC<LaunchSplashProps> = ({ onFinish }) => {
     return () => {
       clearInterval(stepTimer);
       clearTimeout(exitTimer);
-      spinLoop.stop();
+      spinLoop?.stop();
     };
     // eslint-disable-next-line react-hooks/exhaustive-deps
-  }, []);
+  }, [reduceMotion]);
 
   const rotate = ringSpin.interpolate({
     inputRange: [0, 1],
