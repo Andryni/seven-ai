@@ -89,7 +89,7 @@ Output MUST be a single valid JSON object with EXACTLY these 3 keys:
 }`;
 
         const result = await model.generateContent(aiPrompt);
-        const text = result.response.text();
+        const text = result.response.text() || '';
         const parsed = JSON.parse(text);
         if (parsed['index.html'] && parsed['style.css'] && parsed['script.js']) {
           files = {
@@ -214,7 +214,7 @@ Apply ONLY the requested change, keeping everything else intact and consistent. 
 {"index.html": "...", "style.css": "...", "script.js": "..."}`;
 
       const result = await model.generateContent(aiPrompt);
-      const parsed = JSON.parse(result.response.text());
+      const parsed = JSON.parse(result.response.text() || '');
       if (!parsed['index.html'] || !parsed['style.css'] || !parsed['script.js']) {
         throw new Error('Gemini returned an incomplete project structure.');
       }

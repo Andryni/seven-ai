@@ -2,14 +2,21 @@
  * `resolveModel` must try the candidate list in order and cache the first
  * one that actually answers, so a renamed/retired primary model degrades to
  * a working one instead of failing the whole agent with an opaque 404.
+ *
+ * Mocks `@google/genai` (the actively-maintained SDK this app migrated to
+ * from the deprecated `@google/generative-ai`) at the `ai.models.*` level,
+ * matching its stateless client shape.
  */
 
 const mockGenerateContent = jest.fn();
-const mockGetGenerativeModel = jest.fn(() => ({ generateContent: mockGenerateContent }));
+const mockGenerateContentStream = jest.fn();
 
-jest.mock('@google/generative-ai', () => ({
-  GoogleGenerativeAI: jest.fn().mockImplementation(() => ({
-    getGenerativeModel: mockGetGenerativeModel,
+jest.mock('@google/genai', () => ({
+  GoogleGenAI: jest.fn().mockImplementation(() => ({
+    models: {
+      generateContent: mockGenerateContent,
+      generateContentStream: mockGenerateContentStream,
+    },
   })),
 }));
 
@@ -18,7 +25,7 @@ jest.mock('@google/generative-ai', () => ({
 function freshGeminiClient(): typeof import('../src/core/geminiClient') {
   jest.resetModules();
   mockGenerateContent.mockReset();
-  mockGetGenerativeModel.mockClear();
+  mockGenerateContentStream.mockReset();
   // eslint-disable-next-line @typescript-eslint/no-require-imports
   return require('../src/core/geminiClient');
 }
@@ -26,7 +33,7 @@ function freshGeminiClient(): typeof import('../src/core/geminiClient') {
 describe('geminiClient — resolveModel', () => {
   it('uses the first candidate when it answers', async () => {
     const { resolveModel } = freshGeminiClient();
-    mockGenerateContent.mockResolvedValue({ response: { text: () => 'pong' } });
+    mockGenerateContent.mockResolvedValue({ text: 'pong' });
 
     const { modelId } = await resolveModel('fake-key', {});
 
@@ -38,7 +45,7 @@ describe('geminiClient — resolveModel', () => {
     const { resolveModel } = freshGeminiClient();
     mockGenerateContent
       .mockRejectedValueOnce(new Error('404 Not Found: model not found'))
-      .mockResolvedValueOnce({ response: { text: () => 'pong' } });
+      .mockResolvedValueOnce({ text: 'pong' });
 
     const { modelId } = await resolveModel('fake-key', {});
 
@@ -56,7 +63,7 @@ describe('geminiClient — resolveModel', () => {
 
   it('caches the working model id across calls (no re-probe)', async () => {
     const { resolveModel } = freshGeminiClient();
-    mockGenerateContent.mockResolvedValue({ response: { text: () => 'pong' } });
+    mockGenerateContent.mockResolvedValue({ text: 'pong' });
 
     await resolveModel('fake-key', {});
     mockGenerateContent.mockClear();
@@ -65,5 +72,18 @@ describe('geminiClient — resolveModel', () => {
     expect(second.modelId).toBe('gemini-3.6-flash');
     // No probing generateContent call on the second resolution.
     expect(mockGenerateContent).not.toHaveBeenCalled();
+  });
+
+  it('generateContent on the resolved model returns a legacy-shaped result', async () => {
+    const { resolveModel } = freshGeminiClient();
+    mockGenerateContent
+      .mockResolvedValueOnce({ text: 'pong' }) // probe
+      .mockResolvedValueOnce({ text: 'hello world', candidates: [{ content: { parts: [] } }] });
+
+    const { model } = await resolveModel('fake-key', {});
+    const result = await model.generateContent({ contents: [{ role: 'user', parts: [{ text: 'hi' }] }] });
+
+    expect(result.response.text()).toBe('hello world');
+    expect(result.response.candidates).toEqual([{ content: { parts: [] } }]);
   });
 });

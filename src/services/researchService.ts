@@ -68,7 +68,7 @@ Output MUST be a JSON object with this exact structure:
 }`;
 
         const result = await model.generateContent(prompt);
-        const text = result.response.text();
+        const text = result.response.text() || '';
         const parsed = JSON.parse(text);
         if (parsed.title && parsed.summary && Array.isArray(parsed.sections)) {
           title = parsed.title;

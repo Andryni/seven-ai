@@ -1,7 +1,17 @@
-import { GoogleGenerativeAI, type GenerativeModel, type ModelParams } from '@google/generative-ai';
+import { GoogleGenAI, type GenerateContentConfig } from '@google/genai';
 
 /**
  * Shared, resilient Gemini model resolution.
+ *
+ * Migrated from the deprecated `@google/generative-ai` SDK (end-of-life
+ * 2025-08-31, no longer receiving updates) to the actively maintained
+ * `@google/genai` SDK. The new SDK exposes a single `GoogleGenAI` client
+ * with stateless `ai.models.generateContent({ model, contents, config })`
+ * calls instead of per-model `GenerativeModel` objects — `resolveModel`
+ * below wraps that in a small adapter (`ResolvedModel`) that keeps the same
+ * shape (`.generateContent(...)`, `.generateContentStream(...)`) the rest of
+ * the codebase already called, so this migration does not ripple through
+ * every agent file that consumes it.
  *
  * Every call site used to hardcode a single model id (`gemini-3.6-flash`).
  * That is fine the day it ships, but the Gemini API regularly retires/renames
@@ -28,33 +38,105 @@ function isModelNotFoundError(e: unknown): boolean {
 
 export { isModelNotFoundError };
 
+/** Everything the app's call sites pass as the "params" object used to be
+ * shaped like `@google/generative-ai`'s `ModelParams` (minus `model`):
+ * `systemInstruction`, `tools`, `generationConfig`. The new SDK folds all of
+ * that (renamed to camelCase `generationConfig` -> nothing, it is just
+ * `config`) into one `GenerateContentConfig`, so this type keeps the old,
+ * familiar field name at the call sites and remaps it internally. */
+export interface LegacyModelParams {
+  systemInstruction?: string;
+  tools?: GenerateContentConfig['tools'];
+  generationConfig?: Partial<GenerateContentConfig>;
+}
+
+/** Minimal shape of a `@google/generative-ai` response, reproduced so every
+ * call site that does `result.response.text()` / `.candidates` keeps working
+ * unchanged against the new SDK's `response.text` / `.candidates` getters. */
+interface LegacyResponseLike {
+  text: () => string | undefined;
+  candidates?: { content?: { parts?: any[] } }[];
+}
+
+interface LegacyResultLike {
+  response: LegacyResponseLike;
+}
+
+/** Adapter exposing the same two methods every call site already used
+ * (`generateContent`, `generateContentStream`) on top of the new SDK's
+ * stateless `ai.models.*` functions. */
+export interface ResolvedModel {
+  generateContent: (request: { contents: any } | string) => Promise<LegacyResultLike>;
+  generateContentStream: (
+    request: { contents: any } | string
+  ) => Promise<{ stream: AsyncGenerator<{ text: () => string | undefined }> }>;
+}
+
+function wrapResponse(response: { text?: string; candidates?: any[] }): LegacyResultLike {
+  return {
+    response: {
+      text: () => response.text,
+      candidates: response.candidates,
+    },
+  };
+}
+
+function buildConfig(params: LegacyModelParams): GenerateContentConfig {
+  return {
+    ...(params.generationConfig || {}),
+    systemInstruction: params.systemInstruction,
+    tools: params.tools,
+  };
+}
+
+function makeResolvedModel(ai: GoogleGenAI, modelId: string, params: LegacyModelParams): ResolvedModel {
+  const config = buildConfig(params);
+  return {
+    generateContent: async (request) => {
+      const contents = typeof request === 'string' ? request : request.contents;
+      const response = await ai.models.generateContent({ model: modelId, contents, config });
+      return wrapResponse(response);
+    },
+    generateContentStream: async (request) => {
+      const contents = typeof request === 'string' ? request : request.contents;
+      const stream = await ai.models.generateContentStream({ model: modelId, contents, config });
+      async function* iterate() {
+        for await (const chunk of stream) {
+          yield { text: () => chunk.text };
+        }
+      }
+      return { stream: iterate() };
+    },
+  };
+}
+
 /**
- * Returns a ready-to-use GenerativeModel, trying `MODEL_CANDIDATES` in order
+ * Returns a ready-to-use model wrapper, trying `MODEL_CANDIDATES` in order
  * until one is accepted by the API (verified with a 1-token ping on the very
  * first call only). Every later call in the process reuses the cached id.
  */
 export async function resolveModel(
   apiKey: string,
-  params: Omit<ModelParams, 'model'>
-): Promise<{ model: GenerativeModel; modelId: string }> {
-  const genAI = new GoogleGenerativeAI(apiKey);
+  params: LegacyModelParams
+): Promise<{ model: ResolvedModel; modelId: string }> {
+  const ai = new GoogleGenAI({ apiKey });
 
   if (cachedWorkingModel) {
-    return { model: genAI.getGenerativeModel({ ...params, model: cachedWorkingModel }), modelId: cachedWorkingModel };
+    return { model: makeResolvedModel(ai, cachedWorkingModel, params), modelId: cachedWorkingModel };
   }
 
   let lastError: unknown;
   for (const candidate of MODEL_CANDIDATES) {
-    const model = genAI.getGenerativeModel({ ...params, model: candidate });
     try {
       // Cheapest possible real call: a 1-token ping, so the check costs
       // nothing more than the model id verification it exists for.
-      await model.generateContent({
-        contents: [{ role: 'user', parts: [{ text: 'ping' }] }],
-        generationConfig: { maxOutputTokens: 1 },
+      await ai.models.generateContent({
+        model: candidate,
+        contents: 'ping',
+        config: { maxOutputTokens: 1 },
       });
       cachedWorkingModel = candidate;
-      return { model, modelId: candidate };
+      return { model: makeResolvedModel(ai, candidate, params), modelId: candidate };
     } catch (e) {
       lastError = e;
       if (!isModelNotFoundError(e)) {
@@ -70,10 +152,10 @@ export async function resolveModel(
 /** Synchronous helper for call sites that already know a model works this
  * session (avoids re-probing on every request). Falls back to the first
  * candidate if nothing has been resolved yet. */
-export function getModelSync(apiKey: string, params: Omit<ModelParams, 'model'>): { model: GenerativeModel; modelId: string } {
-  const genAI = new GoogleGenerativeAI(apiKey);
+export function getModelSync(apiKey: string, params: LegacyModelParams): { model: ResolvedModel; modelId: string } {
+  const ai = new GoogleGenAI({ apiKey });
   const modelId = cachedWorkingModel ?? MODEL_CANDIDATES[0];
-  return { model: genAI.getGenerativeModel({ ...params, model: modelId }), modelId };
+  return { model: makeResolvedModel(ai, modelId, params), modelId };
 }
 
 export { MODEL_CANDIDATES };

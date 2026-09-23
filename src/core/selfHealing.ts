@@ -64,8 +64,7 @@ class SelfHealingEngine {
           const { model } = await resolveModel(apiKey, {});
           const prompt = `You are the SEVEN Anti-Panic Self-Healing Engine. Fix this buggy code:\n\nTarget: ${targetFile}\nError: ${message}\nCode:\n${originalCode}\n\nReturn ONLY the fixed code without markdown backticks or commentary.`;
           const result = await model.generateContent(prompt);
-          fixedCode = result.response
-            .text()
+          fixedCode = (result.response.text() || '')
             .trim()
             .replace(/^```[a-z]*\n/i, '')
             .replace(/\n```$/i, '');

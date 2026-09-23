@@ -1,4 +1,4 @@
-import { FunctionDeclaration, Part, SchemaType } from '@google/generative-ai';
+import { FunctionDeclaration, Part, Type } from '@google/genai';
 import { resolveModel } from './geminiClient';
 import { openRouterService } from '../services/openRouterService';
 import { useSevenStore } from '../store/useSevenStore';
@@ -38,21 +38,21 @@ const TOOL_DECLARATIONS: FunctionDeclaration[] = [
     name: 'organize_files',
     description:
       'Scan the Downloads directory, categorize files into subfolders (Images, Documents, Installers, Audio, Video, Code, Others) and record an undo journal.',
-    parameters: { type: SchemaType.OBJECT, properties: {} },
+    parameters: { type: Type.OBJECT, properties: {} },
   },
   {
     name: 'undo_file_organization',
     description: 'Undo the last file organization and restore files to their original locations.',
-    parameters: { type: SchemaType.OBJECT, properties: {} },
+    parameters: { type: Type.OBJECT, properties: {} },
   },
   {
     name: 'build_website',
     description:
       'Synthesize a complete modern responsive website (index.html, style.css, script.js) from a description using the Dave Agent.',
     parameters: {
-      type: SchemaType.OBJECT,
+      type: Type.OBJECT,
       properties: {
-        description: { type: SchemaType.STRING, description: 'What the website should be about and include.' },
+        description: { type: Type.STRING, description: 'What the website should be about and include.' },
       },
       required: ['description'],
     },
@@ -61,9 +61,9 @@ const TOOL_DECLARATIONS: FunctionDeclaration[] = [
     name: 'create_research_pdf',
     description: 'Research a topic in depth and compile the result into a styled PDF report.',
     parameters: {
-      type: SchemaType.OBJECT,
+      type: Type.OBJECT,
       properties: {
-        topic: { type: SchemaType.STRING, description: 'The research topic.' },
+        topic: { type: Type.STRING, description: 'The research topic.' },
       },
       required: ['topic'],
     },
@@ -71,35 +71,35 @@ const TOOL_DECLARATIONS: FunctionDeclaration[] = [
   {
     name: 'check_unread_emails',
     description: 'Fetch the latest unread emails from the connected Gmail account.',
-    parameters: { type: SchemaType.OBJECT, properties: {} },
+    parameters: { type: Type.OBJECT, properties: {} },
   },
   {
     name: 'check_instagram_messages',
     description: 'Report on Instagram direct messages (opens a browser session; no public DM API exists).',
-    parameters: { type: SchemaType.OBJECT, properties: {} },
+    parameters: { type: Type.OBJECT, properties: {} },
   },
   {
     name: 'get_last_patch_report',
     description: 'Return the most recent self-healing patch report.',
-    parameters: { type: SchemaType.OBJECT, properties: {} },
+    parameters: { type: Type.OBJECT, properties: {} },
   },
   {
     name: 'test_self_healing',
     description: 'Run a controlled self-healing simulation: inject a bug and record the recovery patch.',
-    parameters: { type: SchemaType.OBJECT, properties: {} },
+    parameters: { type: Type.OBJECT, properties: {} },
   },
   {
     name: 'forget_memory',
     description: 'Erase the permanent user memory notes (when the user asks you to forget everything / reset your memory).',
-    parameters: { type: SchemaType.OBJECT, properties: {} },
+    parameters: { type: Type.OBJECT, properties: {} },
   },
   {
     name: 'search_web',
     description: 'Search the live web in real-time for breaking news, topics, current events or documentation.',
     parameters: {
-      type: SchemaType.OBJECT,
+      type: Type.OBJECT,
       properties: {
-        query: { type: SchemaType.STRING, description: 'The search query or topic to look up.' },
+        query: { type: Type.STRING, description: 'The search query or topic to look up.' },
       },
       required: ['query'],
     },
@@ -108,9 +108,9 @@ const TOOL_DECLARATIONS: FunctionDeclaration[] = [
     name: 'make_phone_call',
     description: 'Open Android phone dialer to call a phone number.',
     parameters: {
-      type: SchemaType.OBJECT,
+      type: Type.OBJECT,
       properties: {
-        phone_number: { type: SchemaType.STRING, description: 'The phone number to call.' },
+        phone_number: { type: Type.STRING, description: 'The phone number to call.' },
       },
       required: ['phone_number'],
     },
@@ -119,10 +119,10 @@ const TOOL_DECLARATIONS: FunctionDeclaration[] = [
     name: 'send_sms',
     description: 'Open Android SMS messenger to send a text to a phone number.',
     parameters: {
-      type: SchemaType.OBJECT,
+      type: Type.OBJECT,
       properties: {
-        phone_number: { type: SchemaType.STRING, description: 'The phone number to message.' },
-        message: { type: SchemaType.STRING, description: 'Optional text message body.' },
+        phone_number: { type: Type.STRING, description: 'The phone number to message.' },
+        message: { type: Type.STRING, description: 'Optional text message body.' },
       },
       required: ['phone_number'],
     },
@@ -131,10 +131,10 @@ const TOOL_DECLARATIONS: FunctionDeclaration[] = [
     name: 'open_whatsapp',
     description: 'Open WhatsApp with an optional contact phone number and prefilled message.',
     parameters: {
-      type: SchemaType.OBJECT,
+      type: Type.OBJECT,
       properties: {
-        phone_number: { type: SchemaType.STRING, description: 'Optional contact phone number.' },
-        text: { type: SchemaType.STRING, description: 'Message to send on WhatsApp.' },
+        phone_number: { type: Type.STRING, description: 'Optional contact phone number.' },
+        text: { type: Type.STRING, description: 'Message to send on WhatsApp.' },
       },
     },
   },
@@ -142,9 +142,9 @@ const TOOL_DECLARATIONS: FunctionDeclaration[] = [
     name: 'open_navigation',
     description: 'Open Android Maps / GPS navigation to a specified address or landmark.',
     parameters: {
-      type: SchemaType.OBJECT,
+      type: Type.OBJECT,
       properties: {
-        destination: { type: SchemaType.STRING, description: 'The address, place, city, or destination coordinates.' },
+        destination: { type: Type.STRING, description: 'The address, place, city, or destination coordinates.' },
       },
       required: ['destination'],
     },
@@ -152,20 +152,20 @@ const TOOL_DECLARATIONS: FunctionDeclaration[] = [
   {
     name: 'get_battery_status',
     description: 'Check Android hardware battery percentage, charging state, and low power mode status.',
-    parameters: { type: SchemaType.OBJECT, properties: {} },
+    parameters: { type: Type.OBJECT, properties: {} },
   },
   {
     name: 'read_clipboard',
     description: 'Read the latest copied text content currently stored in the device clipboard.',
-    parameters: { type: SchemaType.OBJECT, properties: {} },
+    parameters: { type: Type.OBJECT, properties: {} },
   },
   {
     name: 'copy_to_clipboard',
     description: 'Copy a specified text or code snippet to the device clipboard.',
     parameters: {
-      type: SchemaType.OBJECT,
+      type: Type.OBJECT,
       properties: {
-        text: { type: SchemaType.STRING, description: 'Text or code to copy to clipboard.' },
+        text: { type: Type.STRING, description: 'Text or code to copy to clipboard.' },
       },
       required: ['text'],
     },
@@ -174,9 +174,9 @@ const TOOL_DECLARATIONS: FunctionDeclaration[] = [
     name: 'execute_code_sandbox',
     description: 'Execute JavaScript code in a safe local sandbox to compute math, process arrays/strings, or verify logic.',
     parameters: {
-      type: SchemaType.OBJECT,
+      type: Type.OBJECT,
       properties: {
-        code: { type: SchemaType.STRING, description: 'JavaScript code to execute.' },
+        code: { type: Type.STRING, description: 'JavaScript code to execute.' },
       },
       required: ['code'],
     },
@@ -185,9 +185,9 @@ const TOOL_DECLARATIONS: FunctionDeclaration[] = [
     name: 'remember_fact',
     description: 'Save a personal fact, habit, or instruction about the user into persistent long-term semantic memory.',
     parameters: {
-      type: SchemaType.OBJECT,
+      type: Type.OBJECT,
       properties: {
-        fact: { type: SchemaType.STRING, description: 'The fact or user preference to remember forever.' },
+        fact: { type: Type.STRING, description: 'The fact or user preference to remember forever.' },
       },
       required: ['fact'],
     },
@@ -196,9 +196,9 @@ const TOOL_DECLARATIONS: FunctionDeclaration[] = [
     name: 'recall_memories',
     description: 'Search long-term semantic memory for stored user preferences, projects, or personal facts.',
     parameters: {
-      type: SchemaType.OBJECT,
+      type: Type.OBJECT,
       properties: {
-        query: { type: SchemaType.STRING, description: 'Topic or question to look up in memory.' },
+        query: { type: Type.STRING, description: 'Topic or question to look up in memory.' },
       },
       required: ['query'],
     },
@@ -758,7 +758,7 @@ ${notes}`;
 
     // No tool matched: plain conversational answer.
     if (!functionCallPart?.functionCall) {
-      const text = result.response.text();
+      const text = result.response.text() || '';
       store.addTerminalLog('Gemini response received [200 OK]', 'success');
       return { text };
     }
@@ -958,7 +958,7 @@ ${notes}`;
       if (!functionCallPart?.functionCall) {
         // Conversational answer: replay it to the UI in chunks so the user
         // still sees a progressive reveal.
-        const fullText = result.response.text();
+        const fullText = result.response.text() || '';
         await this.replayAsChunks(fullText, onToken);
         store.addTerminalLog('Gemini response received [200 OK]', 'success');
         return {
