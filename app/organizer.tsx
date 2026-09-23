@@ -4,7 +4,7 @@ import {
   View,
   Text,
   TouchableOpacity,
-  ScrollView,
+  FlatList,
 } from 'react-native';
 import { useRouter } from 'expo-router';
 import { useSevenStore } from '../src/store/useSevenStore';
@@ -13,8 +13,10 @@ import { HudHeader } from '../src/components/HudHeader';
 import { ScreenReveal } from '../src/components/ScreenReveal';
 import { BottomNav } from '../src/components/BottomNav';
 import { TerminalLog } from '../src/components/TerminalLog';
+import { TypingDots } from '../src/components/LoadingIndicators';
 import { fileOrganizer } from '../src/services/fileOrganizer';
 import { haptics } from '../src/services/hapticsService';
+import { soundFx } from '../src/services/soundFxService';
 import { useTheme, useThemeStyles } from '../src/theme/theme';
 import type { Palette } from '../src/theme/theme';
 import { t } from '../src/theme/i18n';
@@ -52,10 +54,12 @@ export default function OrganizerScreen() {
 
   const handleOrganize = async () => {
     haptics.light();
+    soundFx.playLaserWhoosh();
     setLoading(true);
     try {
       await fileOrganizer.organizeDownloads();
       haptics.success();
+      soundFx.playPatchSuccess();
     } catch (e: any) {
       haptics.error();
       addTerminalLog(`Organizer Exception: ${e?.message || e}`, 'error');
@@ -107,7 +111,11 @@ export default function OrganizerScreen() {
       {/* Screen Header */}
       <ScreenReveal index={0}>
       <View style={styles.topNav}>
-        <TouchableOpacity style={styles.backBtn} onPress={() => router.push('/')}>
+        <TouchableOpacity
+          style={styles.backBtn}
+          accessibilityLabel={t('nav.dashboard', lang)}
+          onPress={() => router.push('/')}
+        >
           <ChevronLeft size={16} color={palette.accent} />
           <Text style={styles.backBtnText}>DASHBOARD</Text>
         </TouchableOpacity>
@@ -121,7 +129,27 @@ export default function OrganizerScreen() {
       </View>
       </ScreenReveal>
 
-      <ScrollView style={styles.scrollArea} contentContainerStyle={styles.scrollContent}>
+      {/* The moved-files journal can grow with a large Downloads folder, so it
+          is the one virtualized list here; everything above it (banner,
+          category grid) is a fixed-size header rendered once. */}
+      <FlatList
+        style={styles.scrollArea}
+        contentContainerStyle={styles.scrollContent}
+        data={lastOrganizeResult?.files ?? []}
+        keyExtractor={(f) => f.id}
+        removeClippedSubviews
+        initialNumToRender={20}
+        renderItem={({ item: f }) => (
+          <View style={styles.fileRow}>
+            <View style={styles.fileLeft}>
+              {getCategoryIcon(f.category)}
+              <Text style={styles.fileName}>{f.name}</Text>
+            </View>
+            <Text style={styles.fileCatTag}>{f.category}</Text>
+          </View>
+        )}
+        ListHeaderComponent={
+          <>
         {/* Banner / Info Card */}
         <ScreenReveal index={1}>
         <View style={styles.bannerCard}>
@@ -138,13 +166,15 @@ export default function OrganizerScreen() {
           <View style={styles.actionButtonsRow}>
             <TouchableOpacity
               style={[styles.primaryOrganizeBtn, loading && styles.btnLoading]}
+              accessibilityLabel={t('organizer.organize', lang)}
               onPress={handleOrganize}
               disabled={loading}
             >
               <FolderSync size={15} color={palette.bgDeep} />
               <Text style={styles.primaryOrganizeText}>
-                {loading ? 'ORGANIZING...' : t('organizer.organize', lang).toUpperCase()}
+                {loading ? 'ORGANIZING' : t('organizer.organize', lang).toUpperCase()}
               </Text>
+              {loading && <TypingDots color={palette.bgDeep} size={4} />}
             </TouchableOpacity>
 
             <TouchableOpacity
@@ -153,13 +183,15 @@ export default function OrganizerScreen() {
                 (!lastOrganizeResult || lastOrganizeResult.status === 'undone') &&
                   styles.undoBtnDisabled,
               ]}
+              accessibilityLabel={t('organizer.undo', lang)}
               onPress={handleUndo}
               disabled={undoLoading || !lastOrganizeResult || lastOrganizeResult.status === 'undone'}
             >
               <RotateCcw size={14} color={palette.accent} />
               <Text style={styles.undoBtnText}>
-                {undoLoading ? 'RESTORING...' : t('organizer.undo', lang).toUpperCase()}
+                {undoLoading ? 'RESTORING' : t('organizer.undo', lang).toUpperCase()}
               </Text>
+              {undoLoading && <TypingDots color={palette.accent} size={4} />}
             </TouchableOpacity>
           </View>
         </View>
@@ -193,30 +225,24 @@ export default function OrganizerScreen() {
         </View>
         </ScreenReveal>
 
-        {/* Moved Files List if available */}
+        {/* Moved Files List header — the rows themselves are the FlatList's
+            virtualized items (see renderItem above), not mapped here. */}
         {lastOrganizeResult && lastOrganizeResult.files.length > 0 && (
           <ScreenReveal index={4}>
-          <View style={styles.filesCard}>
-            <View style={styles.filesHeader}>
-              <CheckCircle2 size={13} color={palette.success} />
-              <Text style={styles.filesTitle}>
-                JOURNAL STATUS: {lastOrganizeResult.status.toUpperCase()} ({lastOrganizeResult.files.length} ITEMS)
-              </Text>
-            </View>
-
-            {lastOrganizeResult.files.map((f) => (
-              <View key={f.id} style={styles.fileRow}>
-                <View style={styles.fileLeft}>
-                  {getCategoryIcon(f.category)}
-                  <Text style={styles.fileName}>{f.name}</Text>
-                </View>
-                <Text style={styles.fileCatTag}>{f.category}</Text>
+            <View style={styles.filesCardHeaderOnly}>
+              <View style={styles.filesHeader}>
+                <CheckCircle2 size={13} color={palette.success} />
+                <Text style={styles.filesTitle}>
+                  JOURNAL STATUS: {lastOrganizeResult.status.toUpperCase()} ({lastOrganizeResult.files.length} ITEMS)
+                </Text>
               </View>
-            ))}
-          </View>
+            </View>
           </ScreenReveal>
         )}
-      </ScrollView>
+          </>
+        }
+        ListFooterComponent={<View style={styles.filesCardFooterSpace} />}
+      />
 
       <BottomNav active="organizer" />
     </ParticleBackground>
@@ -396,6 +422,22 @@ const organizerStyles = (t: Palette) =>
       borderColor: t.border,
       padding: 10,
     },
+    // The journal is now a FlatList (see OrganizerScreen): this wraps only
+    // the header row, while `fileRow` items render as virtualized siblings
+    // below it — same visual well, split so items above ~20 stay fast.
+    filesCardHeaderOnly: {
+      backgroundColor: t.bgDeep,
+      borderTopLeftRadius: 6,
+      borderTopRightRadius: 6,
+      borderWidth: 1,
+      borderBottomWidth: 0,
+      borderColor: t.border,
+      paddingHorizontal: 10,
+      paddingTop: 10,
+    },
+    filesCardFooterSpace: {
+      height: 8,
+    },
     filesHeader: {
       flexDirection: 'row',
       alignItems: 'center',
@@ -416,8 +458,12 @@ const organizerStyles = (t: Palette) =>
       justifyContent: 'space-between',
       alignItems: 'center',
       paddingVertical: 4,
+      paddingHorizontal: 10,
+      backgroundColor: t.bgDeep,
+      borderLeftWidth: 1,
+      borderRightWidth: 1,
       borderBottomWidth: 1,
-      borderBottomColor: t.border,
+      borderColor: t.border,
     },
     fileLeft: {
       flexDirection: 'row',

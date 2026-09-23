@@ -1,3 +1,6 @@
+import { Platform } from 'react-native';
+import * as Battery from 'expo-battery';
+import * as FileSystem from 'expo-file-system/legacy';
 import { useSevenStore } from '../store/useSevenStore';
 import { fetchLiveBriefing, type LiveNewsItem } from './liveInfoService';
 
@@ -15,6 +18,8 @@ export interface MorningBriefingData {
     battery: string;
     storageUsage: string;
     astStatus: string;
+    /** True when battery/storage came from real device APIs, not a placeholder. */
+    isLive: boolean;
   };
   techHighlight: string;
   /** Real headlines when the feeds answered; empty otherwise. */
@@ -36,6 +41,42 @@ class MorningBriefingService {
     return MorningBriefingService.instance;
   }
 
+  /**
+   * Real device health: battery via expo-battery, disk space via
+   * expo-file-system/legacy. Both were hardcoded placeholders
+   * ("98% [Optimal]", "14.2 GB / 128 GB") — the briefing looked like a demo
+   * because those numbers never moved. Fails soft to the honest placeholder
+   * on web / when the native API is unavailable.
+   */
+  private async readDeviceHealth(): Promise<{ battery: string; storageUsage: string; isLive: boolean }> {
+    if (Platform.OS === 'web') {
+      return { battery: '—', storageUsage: '—', isLive: false };
+    }
+    try {
+      const [level, state, free, total] = await Promise.all([
+        Battery.getBatteryLevelAsync(),
+        Battery.getBatteryStateAsync(),
+        FileSystem.getFreeDiskStorageAsync(),
+        FileSystem.getTotalDiskCapacityAsync(),
+      ]);
+
+      const pct = Math.round(level * 100);
+      const charging =
+        state === Battery.BatteryState.CHARGING || state === Battery.BatteryState.FULL;
+      const battery = `${pct}%${charging ? ' [Charging]' : pct > 20 ? ' [Optimal]' : ' [Low]'}`;
+
+      const GB = 1024 ** 3;
+      const freeGb = free / GB;
+      const totalGb = total / GB;
+      const freePct = totalGb > 0 ? Math.round((freeGb / totalGb) * 100) : 0;
+      const storageUsage = `${freeGb.toFixed(1)} GB / ${totalGb.toFixed(1)} GB (${freePct}% Free)`;
+
+      return { battery, storageUsage, isLive: true };
+    } catch {
+      return { battery: '—', storageUsage: '—', isLive: false };
+    }
+  }
+
   public async generateBriefing(): Promise<MorningBriefingData> {
     const store = useSevenStore.getState();
     const config = store.config;
@@ -54,10 +95,13 @@ class MorningBriefingService {
     // Real world facts first: Open-Meteo for the weather, RSS for the news.
     // Everything here fails soft — an unreachable service simply falls back to
     // the neutral copy below instead of breaking the briefing.
-    const live = await fetchLiveBriefing(config.language === 'fr' ? 'fr' : 'en').catch(() => ({
-      weather: null,
-      news: [] as LiveNewsItem[],
-    }));
+    const [live, deviceHealth] = await Promise.all([
+      fetchLiveBriefing(config.language === 'fr' ? 'fr' : 'en').catch(() => ({
+        weather: null,
+        news: [] as LiveNewsItem[],
+      })),
+      this.readDeviceHealth(),
+    ]);
 
     const weatherLine = live.weather
       ? isFr
@@ -84,9 +128,15 @@ class MorningBriefingService {
         : `You have ${emails.length} priority transmissions in your Gmail queue. Security audit and architecture reviews are cleared.`,
       agendaItems: events.map((e) => ({ time: e.time, title: e.title })),
       deviceHealth: {
-        battery: '98% [Optimal]',
-        storageUsage: '14.2 GB / 128 GB (88% Free)',
-        astStatus: 'Armed • Zero Regressions',
+        ...deviceHealth,
+        astStatus:
+          store.patchLogs.length > 0
+            ? isFr
+              ? `Armé • ${store.patchLogs.length} correctif(s) enregistré(s)`
+              : `Armed • ${store.patchLogs.length} patch(es) logged`
+            : isFr
+              ? 'Armé • Aucune anomalie'
+              : 'Armed • Zero Regressions',
       },
       techHighlight:
         'Seven AI neural core operating at 60 FPS. Dave Agent is ready for autonomous multi-file web deployment.',

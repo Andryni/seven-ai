@@ -51,6 +51,10 @@ export interface AssistantConfig {
   widgetHidden?: string[];
   wakeWordEnabled?: boolean;
   gyroEnabled?: boolean;
+  /** Shows a small text caption under icon-only buttons across the app
+      (chat header, history actions...) — helps both readability and
+      accessibility for anyone unsure what a bare icon does. */
+  showIconLabels?: boolean;
   isConfigured: boolean;
 }
 

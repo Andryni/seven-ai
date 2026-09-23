@@ -5,7 +5,7 @@ import {
   Text,
   TextInput,
   TouchableOpacity,
-  ScrollView,
+  FlatList,
   Platform,
   Image,
 } from 'react-native';
@@ -22,6 +22,7 @@ import { VoiceModeOverlay } from '../src/components/VoiceModeOverlay';
 import { SelfHealingModal } from '../src/components/SelfHealingModal';
 import { BottomNav } from '../src/components/BottomNav';
 import { TapScale } from '../src/components/TapScale';
+import { IconCaption } from '../src/components/IconCaption';
 import { useVoice } from '../src/hooks/useVoice';
 import { useTheme, useThemeStyles } from '../src/theme/theme';
 import type { Palette } from '../src/theme/theme';
@@ -30,6 +31,7 @@ import { haptics } from '../src/services/hapticsService';
 import { sevenAgent } from '../src/core/sevenAgent';
 import { selfHealing } from '../src/core/selfHealing';
 import { researchService } from '../src/services/researchService';
+import { chatExportService } from '../src/services/chatExportService';
 import {
   Mic,
   MicOff,
@@ -48,6 +50,7 @@ import {
   Headphones,
   Paperclip,
   Waves,
+  Download,
 } from 'lucide-react-native';
 import * as ImagePicker from 'expo-image-picker';
 import { documentAnalysisService } from '../src/services/documentAnalysisService';
@@ -95,7 +98,7 @@ export default function ChatScreen() {
     []
   );
 
-  const scrollViewRef = useRef<ScrollView>(null);
+  const scrollViewRef = useRef<FlatList>(null);
   const {
     isRecording,
     isSpeaking,
@@ -110,7 +113,7 @@ export default function ChatScreen() {
   } = useVoice();
 
   useEffect(() => {
-    if (scrollViewRef.current) {
+    if (scrollViewRef.current && chatHistory.length > 0) {
       scrollViewRef.current.scrollToEnd({ animated: true });
     }
   }, [chatHistory]);
@@ -413,6 +416,32 @@ export default function ChatScreen() {
     resetConversation();
   };
 
+  const [exportingChat, setExportingChat] = useState(false);
+  const handleExportChat = async () => {
+    if (exportingChat || chatHistory.length === 0) return;
+    haptics.medium();
+    setExportingChat(true);
+    try {
+      const lang = (config.language || 'en') === 'fr' ? 'fr' : 'en';
+      const title = chatExportService.deriveTitle(
+        chatHistory,
+        lang === 'fr' ? 'Conversation Seven AI' : 'Seven AI Conversation'
+      );
+      addTerminalLog('Exporting conversation to PDF...', 'cmd');
+      const pdfUri = await chatExportService.exportToPdf(title, chatHistory, lang);
+      addTerminalLog(`* Conversation PDF compiled: ${pdfUri}`, 'success');
+      await chatExportService.shareFile(
+        pdfUri,
+        'application/pdf',
+        lang === 'fr' ? 'Partager la conversation' : 'Share conversation'
+      );
+    } catch (e: any) {
+      addTerminalLog(`EXPORT ERROR: ${e?.message || e}`, 'error');
+    } finally {
+      setExportingChat(false);
+    }
+  };
+
   const handleAction = async (actionType: string, payload?: any) => {
     switch (actionType) {
       case 'open_dave_preview':
@@ -486,10 +515,24 @@ export default function ChatScreen() {
             }}
           >
             <Waves size={15} color={voiceModeOpen ? palette.bgDeep : palette.accent} />
+            <IconCaption
+              visible={config.showIconLabels}
+              label={t('dash.voiceMode', config.language)}
+              color={voiceModeOpen ? palette.bgDeep : palette.accent}
+            />
           </TapScale>
 
           <TouchableOpacity
             style={[styles.iconBtn, handsFreeMode && { backgroundColor: palette.accent }]}
+            accessibilityLabel={
+              handsFreeMode
+                ? (config.language || 'en') === 'fr'
+                  ? 'Désactiver le mode mains libres'
+                  : 'Disable hands-free mode'
+                : (config.language || 'en') === 'fr'
+                  ? 'Activer le mode mains libres'
+                  : 'Enable hands-free mode'
+            }
             onPress={() => {
               haptics.medium();
               const next = !handsFreeMode;
@@ -510,6 +553,11 @@ export default function ChatScreen() {
             }}
           >
             <Headphones size={15} color={handsFreeMode ? palette.bgDeep : palette.accent} />
+            <IconCaption
+              visible={config.showIconLabels}
+              label={handsFreeMode ? 'HANDS-FREE' : 'HANDS-FREE'}
+              color={handsFreeMode ? palette.bgDeep : palette.accent}
+            />
           </TouchableOpacity>
 
           <TapScale
@@ -522,6 +570,29 @@ export default function ChatScreen() {
             }}
           >
             <History size={15} color={palette.warning} />
+            <IconCaption
+              visible={config.showIconLabels}
+              label={t('nav.history', config.language)}
+              color={palette.warning}
+            />
+          </TapScale>
+
+          <TapScale
+            scaleTo={0.9}
+            style={styles.iconBtn}
+            accessibilityLabel={t('chat.exportPdf', config.language)}
+            onPress={handleExportChat}
+            disabled={exportingChat || chatHistory.length === 0}
+          >
+            <Download
+              size={15}
+              color={chatHistory.length === 0 ? palette.textFaint : palette.info}
+            />
+            <IconCaption
+              visible={config.showIconLabels}
+              label={t('chat.exportPdf', config.language)}
+              color={chatHistory.length === 0 ? palette.textFaint : palette.info}
+            />
           </TapScale>
 
           <TapScale
@@ -538,6 +609,11 @@ export default function ChatScreen() {
             ) : (
               <VolumeX size={15} color={palette.textFaint} />
             )}
+            <IconCaption
+              visible={config.showIconLabels}
+              label={config.voiceEnabled ? 'MUTE' : 'UNMUTE'}
+              color={config.voiceEnabled ? palette.success : palette.textFaint}
+            />
           </TapScale>
 
           <TapScale
@@ -550,11 +626,17 @@ export default function ChatScreen() {
             }}
           >
             <Terminal size={15} color={showTerminal ? palette.info : palette.accent} />
+            <IconCaption
+              visible={config.showIconLabels}
+              label="LOG"
+              color={showTerminal ? palette.info : palette.accent}
+            />
           </TapScale>
 
           <TapScale
             scaleTo={0.9}
             style={[styles.iconBtn, styles.newChatBtn]}
+            accessibilityLabel={t('chat.newConversation', config.language)}
             onPress={handleNewConversation}
           >
             <MessageSquarePlus size={15} color={palette.info} />
@@ -571,6 +653,7 @@ export default function ChatScreen() {
             }}
           >
             <Trash2 size={15} color={palette.error} />
+            <IconCaption visible={config.showIconLabels} label="CLEAR" color={palette.error} />
           </TapScale>
         </View>
       </View>
@@ -583,16 +666,22 @@ export default function ChatScreen() {
         </View>
       )}
 
-      {/* Messages Scroll Area */}
-      <ScrollView
+      {/* Messages area — virtualized: a long-running conversation used to be
+          a single ScrollView rendering every bubble at once, which got
+          visibly slower to scroll/update the more history accumulated. */}
+      <FlatList
         ref={scrollViewRef}
         style={styles.chatScroll}
         contentContainerStyle={styles.chatContent}
-      >
-        {chatHistory.map((msg) => (
-          <ChatBubble key={msg.id} message={msg} onAction={handleAction} />
-        ))}
-      </ScrollView>
+        data={chatHistory}
+        keyExtractor={(msg) => msg.id}
+        renderItem={({ item }) => <ChatBubble message={item} onAction={handleAction} />}
+        onScrollToIndexFailed={() => {}}
+        removeClippedSubviews={Platform.OS !== 'web'}
+        maxToRenderPerBatch={12}
+        windowSize={10}
+        initialNumToRender={16}
+      />
 
       {/* Bottom Chat Bar */}
       <ScreenReveal index={1} distance={10}>
@@ -601,22 +690,38 @@ export default function ChatScreen() {
           <View style={styles.imagePreviewBar}>
             <Image source={{ uri: selectedImage.uri }} style={styles.imageThumbnail} />
             <Text style={styles.imagePreviewText} numberOfLines={1}>IMAGE READY FOR ANALYSIS</Text>
-            <TouchableOpacity style={styles.clearImageBtn} onPress={() => setSelectedImage(null)}>
+            <TouchableOpacity
+              style={styles.clearImageBtn}
+              accessibilityLabel={t('input.clearImage', config.language)}
+              onPress={() => setSelectedImage(null)}
+            >
               <X size={14} color={palette.error} />
             </TouchableOpacity>
           </View>
         )}
 
         <View style={styles.inputWrapper}>
-          <TouchableOpacity style={styles.mediaBtn} onPress={handlePickImage}>
+          <TouchableOpacity
+            style={styles.mediaBtn}
+            accessibilityLabel={t('input.attachImage', config.language)}
+            onPress={handlePickImage}
+          >
             <ImageIcon size={16} color={palette.accent} />
           </TouchableOpacity>
 
-          <TouchableOpacity style={styles.mediaBtn} onPress={handleTakePhoto}>
+          <TouchableOpacity
+            style={styles.mediaBtn}
+            accessibilityLabel={t('input.takePhoto', config.language)}
+            onPress={handleTakePhoto}
+          >
             <Camera size={16} color={palette.accent} />
           </TouchableOpacity>
 
-          <TouchableOpacity style={styles.mediaBtn} onPress={handlePickDocument}>
+          <TouchableOpacity
+            style={styles.mediaBtn}
+            accessibilityLabel={t('input.attachDocument', config.language)}
+            onPress={handlePickDocument}
+          >
             <Paperclip size={16} color={palette.accent} />
           </TouchableOpacity>
 
@@ -634,6 +739,7 @@ export default function ChatScreen() {
 
           <TouchableOpacity
             style={[styles.micBtn, (isRecording || isSpeaking) && styles.micBtnActive]}
+            accessibilityLabel={t('input.mic', config.language)}
             onPress={handleMicToggle}
           >
             {isRecording ? (
@@ -647,6 +753,7 @@ export default function ChatScreen() {
 
           <TouchableOpacity
             style={[styles.sendBtn, (!inputQuery.trim() && !selectedImage) && styles.sendBtnDisabled]}
+            accessibilityLabel={t('input.send', config.language)}
             onPress={() => handleSend()}
             disabled={(!inputQuery.trim() && !selectedImage) || isProcessing}
           >

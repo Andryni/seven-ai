@@ -13,9 +13,11 @@ import { useSevenStore } from '../src/store/useSevenStore';
 import { ParticleBackground } from '../src/components/ParticleBackground';
 import { HudHeader } from '../src/components/HudHeader';
 import { TerminalLog } from '../src/components/TerminalLog';
+import { TypingDots } from '../src/components/LoadingIndicators';
 import { ScreenReveal } from '../src/components/ScreenReveal';
 import { BottomNav } from '../src/components/BottomNav';
 import { researchService } from '../src/services/researchService';
+import { soundFx } from '../src/services/soundFxService';
 import { ResearchDocument } from '../src/types';
 import {
   FileText,
@@ -50,10 +52,12 @@ export default function ResearchScreen() {
     const active = overrideTopic || topic;
     if (!active.trim() || isSynthesizing) return;
 
+    soundFx.playResearchScan();
     setIsSynthesizing(true);
     try {
       const doc = await researchService.researchTopicAndCreatePdf(active);
       setActiveDoc(doc);
+      soundFx.playPatchSuccess();
     } catch (e: any) {
       addTerminalLog(`Research synthesis error: ${e?.message || e}`, 'error');
     } finally {
@@ -76,7 +80,11 @@ export default function ResearchScreen() {
       {/* Screen Sub-Header */}
       <ScreenReveal index={0}>
       <View style={styles.topNav}>
-        <TouchableOpacity style={styles.backBtn} onPress={() => router.push('/')}>
+        <TouchableOpacity
+          style={styles.backBtn}
+          accessibilityLabel="Dashboard"
+          onPress={() => router.push('/')}
+        >
           <ChevronLeft size={16} color="#FFD700" />
           <Text style={styles.backBtnText}>DASHBOARD</Text>
         </TouchableOpacity>
@@ -109,13 +117,15 @@ export default function ResearchScreen() {
             />
             <TouchableOpacity
               style={[styles.compileBtn, isSynthesizing && styles.btnLoading]}
+              accessibilityLabel="Generate PDF"
               onPress={() => handleResearch()}
               disabled={isSynthesizing}
             >
               <Play size={14} color="#050508" />
               <Text style={styles.compileText}>
-                {isSynthesizing ? 'COMPILING...' : 'GENERATE PDF'}
+                {isSynthesizing ? 'COMPILING' : 'GENERATE PDF'}
               </Text>
+              {isSynthesizing && <TypingDots color="#050508" size={4} />}
             </TouchableOpacity>
           </View>
 
@@ -130,6 +140,7 @@ export default function ResearchScreen() {
               <TouchableOpacity
                 key={i}
                 style={styles.presetChip}
+                accessibilityLabel={p}
                 onPress={() => {
                   setTopic(p);
                   handleResearch(p);
@@ -188,6 +199,7 @@ export default function ResearchScreen() {
             <View style={styles.docActions}>
               <TouchableOpacity
                 style={styles.shareBtn}
+                accessibilityLabel="Share / export PDF"
                 onPress={() => handleShare(currentDoc)}
               >
                 <Share2 size={14} color="#050508" />
@@ -196,6 +208,7 @@ export default function ResearchScreen() {
 
               <TouchableOpacity
                 style={styles.openBtn}
+                accessibilityLabel="View in PDF viewer"
                 onPress={() => handleShare(currentDoc)}
               >
                 <ExternalLink size={14} color="#FFD700" />

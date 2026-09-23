@@ -229,6 +229,7 @@ const CanvasWidget: React.FC<CanvasWidgetProps> = ({
         <TouchableOpacity
           style={cardStyle}
           activeOpacity={0.8}
+          accessibilityLabel={`Hide ${spec.title} widget`}
           onPress={() => {
             // In ARRANGE mode a tap means "take this module off the deck".
             // Hiding is a distinct intent from moving, and it is what makes the
@@ -248,7 +249,12 @@ const CanvasWidget: React.FC<CanvasWidgetProps> = ({
           </View>
         </TouchableOpacity>
       ) : (
-        <TouchableOpacity style={cardStyle} activeOpacity={0.85} onPress={spec.onPress}>
+        <TouchableOpacity
+          style={cardStyle}
+          activeOpacity={0.85}
+          accessibilityLabel={spec.title}
+          onPress={spec.onPress}
+        >
           {content}
         </TouchableOpacity>
       )}

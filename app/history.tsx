@@ -1,5 +1,6 @@
 import React, { useState, useMemo } from 'react';
-import { View, Text, TextInput, TouchableOpacity, ScrollView } from 'react-native';
+import { View, Text, TextInput, TouchableOpacity, FlatList } from 'react-native';
+import type { ListRenderItemInfo } from 'react-native';
 import { useRouter } from 'expo-router';
 import { useSevenStore } from '../src/store/useSevenStore';
 import { ParticleBackground } from '../src/components/ParticleBackground';
@@ -25,7 +26,10 @@ import {
   Check,
   CornerUpLeft,
   MessageSquarePlus,
+  Download,
+  FileText,
 } from 'lucide-react-native';
+import { chatExportService } from '../src/services/chatExportService';
 
 /** "Today 14:32" / "Yesterday" / "12 SEPT" style relative label. */
 function formatSessionDate(ts: number, lang: 'fr' | 'en'): string {
@@ -113,6 +117,44 @@ export default function HistoryScreen() {
     setRenameDraft('');
   };
 
+  const [exportingId, setExportingId] = useState<string | null>(null);
+
+  const handleExportPdf = async (session: ChatSession) => {
+    if (exportingId) return;
+    haptics.medium();
+    setExportingId(session.id);
+    try {
+      const uri = await chatExportService.exportSessionToPdf(session, lang);
+      await chatExportService.shareFile(
+        uri,
+        'application/pdf',
+        lang === 'fr' ? 'Partager la conversation' : 'Share conversation'
+      );
+    } catch (e) {
+      console.warn('Export PDF failed:', e);
+    } finally {
+      setExportingId(null);
+    }
+  };
+
+  const handleExportMarkdown = async (session: ChatSession) => {
+    if (exportingId) return;
+    haptics.medium();
+    setExportingId(session.id);
+    try {
+      const uri = await chatExportService.exportSessionToMarkdown(session, lang);
+      await chatExportService.shareFile(
+        uri,
+        'text/markdown',
+        lang === 'fr' ? 'Partager le Markdown' : 'Share Markdown'
+      );
+    } catch (e) {
+      console.warn('Export Markdown failed:', e);
+    } finally {
+      setExportingId(null);
+    }
+  };
+
   return (
     <ParticleBackground>
       <HudHeader />
@@ -120,7 +162,11 @@ export default function HistoryScreen() {
       {/* Screen Sub-Header */}
       <ScreenReveal index={0}>
         <View style={styles.navHeader}>
-          <TouchableOpacity style={styles.backBtn} onPress={() => router.push('/')}>
+          <TouchableOpacity
+            style={styles.backBtn}
+            accessibilityLabel={t('nav.dashboard', lang)}
+            onPress={() => router.push('/')}
+          >
             <ChevronLeft size={16} color={palette.accent} />
             <Text style={styles.backBtnText}>DASHBOARD</Text>
           </TouchableOpacity>
@@ -135,7 +181,11 @@ export default function HistoryScreen() {
             </View>
           </View>
 
-          <TouchableOpacity style={[styles.iconBtn, styles.newChatBtn]} onPress={handleNewChat}>
+          <TouchableOpacity
+            style={[styles.iconBtn, styles.newChatBtn]}
+            accessibilityLabel={t('history.newChat', lang)}
+            onPress={handleNewChat}
+          >
             <MessageSquarePlus size={15} color={palette.info} />
             <Text style={styles.newChatText}>{t('history.newChat', lang)}</Text>
           </TouchableOpacity>
@@ -155,7 +205,10 @@ export default function HistoryScreen() {
               placeholderTextColor={palette.textFaint}
             />
             {query.length > 0 && (
-              <TouchableOpacity onPress={() => setQuery('')}>
+              <TouchableOpacity
+                accessibilityLabel={lang === 'fr' ? 'Effacer la recherche' : 'Clear search'}
+                onPress={() => setQuery('')}
+              >
                 <X size={13} color={palette.textFaint} />
               </TouchableOpacity>
             )}
@@ -163,16 +216,25 @@ export default function HistoryScreen() {
         </View>
       </ScreenReveal>
 
-      {/* Sessions List */}
-      <ScrollView style={styles.listScroll} contentContainerStyle={styles.listContent}>
-        {filteredSessions.length === 0 && (
+      {/* Sessions List — virtualized: this used to render every archived
+          session in one ScrollView, which got slower to scroll the longer
+          someone used the app. */}
+      <FlatList
+        style={styles.listScroll}
+        contentContainerStyle={styles.listContent}
+        data={filteredSessions}
+        keyExtractor={(session) => session.id}
+        removeClippedSubviews
+        maxToRenderPerBatch={10}
+        windowSize={8}
+        initialNumToRender={10}
+        ListEmptyComponent={
           <View style={styles.emptyState}>
             <History size={30} color={palette.textFaint} />
             <Text style={styles.emptyText}>{t('history.empty', lang)}</Text>
           </View>
-        )}
-
-        {filteredSessions.map((session, cardIndex) => {
+        }
+        renderItem={({ item: session, index: cardIndex }: ListRenderItemInfo<ChatSession>) => {
           const isCurrent = session.id === activeChatSessionId;
           const lastMsg = session.messages[session.messages.length - 1];
           const preview = lastMsg ? lastMsg.text.replace(/\s+/g, ' ').slice(0, 90) : '';
@@ -198,7 +260,11 @@ export default function HistoryScreen() {
                         onSubmitEditing={commitRename}
                         onBlur={commitRename}
                       />
-                      <TouchableOpacity style={styles.renameConfirm} onPress={commitRename}>
+                      <TouchableOpacity
+                        style={styles.renameConfirm}
+                        accessibilityLabel={t('common.save', lang)}
+                        onPress={commitRename}
+                      >
                         <Check size={13} color={palette.success} />
                       </TouchableOpacity>
                     </View>
@@ -235,7 +301,26 @@ export default function HistoryScreen() {
 
                   <View style={styles.actionsRow}>
                     <TouchableOpacity
+                      style={[styles.actionBtn, styles.exportBtn]}
+                      accessibilityLabel={t('history.exportPdf', lang)}
+                      disabled={exportingId === session.id}
+                      onPress={() => handleExportPdf(session)}
+                    >
+                      <Download size={11} color={palette.info} />
+                    </TouchableOpacity>
+
+                    <TouchableOpacity
+                      style={[styles.actionBtn, styles.exportBtn]}
+                      accessibilityLabel={t('history.exportMd', lang)}
+                      disabled={exportingId === session.id}
+                      onPress={() => handleExportMarkdown(session)}
+                    >
+                      <FileText size={11} color={palette.info} />
+                    </TouchableOpacity>
+
+                    <TouchableOpacity
                       style={[styles.actionBtn, styles.renameBtn]}
+                      accessibilityLabel={t('history.rename', lang)}
                       onPress={() => beginRename(session)}
                     >
                       <Pencil size={11} color={palette.warning} />
@@ -246,6 +331,7 @@ export default function HistoryScreen() {
 
                     <TouchableOpacity
                       style={[styles.actionBtn, styles.deleteBtn]}
+                      accessibilityLabel={t('history.delete', lang)}
                       onPress={() => handleDelete(session)}
                     >
                       <Trash2 size={11} color={palette.error} />
@@ -256,6 +342,7 @@ export default function HistoryScreen() {
 
                     <TouchableOpacity
                       style={[styles.actionBtn, styles.openBtn]}
+                      accessibilityLabel={t('history.open', lang)}
                       onPress={() => handleOpenSession(session)}
                     >
                       <CornerUpLeft size={11} color={palette.bgDeep} />
@@ -266,8 +353,8 @@ export default function HistoryScreen() {
               </View>
             </ScreenReveal>
           );
-        })}
-      </ScrollView>
+        }}
+      />
 
       {/* Delete confirmation (Alert.alert is a no-op on web) */}
       <ConfirmDialog
@@ -503,6 +590,12 @@ const historyStyles = (t: Palette) =>
       paddingHorizontal: 7,
       paddingVertical: 4,
       borderRadius: 4,
+    },
+    exportBtn: {
+      backgroundColor: t.accentSoft,
+      borderWidth: 1,
+      borderColor: t.border,
+      paddingHorizontal: 6,
     },
     renameBtn: {
       backgroundColor: t.accentSoft,

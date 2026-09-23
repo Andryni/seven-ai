@@ -77,6 +77,7 @@ export const TerminalLog: React.FC<TerminalLogProps> = ({
             <TouchableOpacity
               onPress={clearTerminalLogs}
               style={styles.controlButton}
+              accessibilityLabel="Clear log"
               hitSlop={{ top: 8, bottom: 8, left: 8, right: 8 }}
             >
               <Trash2 size={11} color="rgba(255, 215, 0, 0.7)" />

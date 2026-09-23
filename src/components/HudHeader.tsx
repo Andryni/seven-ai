@@ -85,6 +85,7 @@ export const HudHeader: React.FC<HudHeaderProps> = ({ onPressStatus }) => {
         <View style={styles.leftPills}>
           <TouchableOpacity
             onPress={onPressStatus}
+            accessibilityLabel={`System status: ${status}`}
             style={[styles.statusBadge, { borderColor: getStatusColor() }]}
           >
             <View style={[styles.statusDot, { backgroundColor: getStatusColor() }]} />
@@ -95,7 +96,9 @@ export const HudHeader: React.FC<HudHeaderProps> = ({ onPressStatus }) => {
 
           <View style={styles.telemetryPill}>
             <Cpu size={11} color={palette.accent} />
-            <Text style={styles.telemetryText}>{telemetry.cpuLoad}% CPU</Text>
+            <Text style={styles.telemetryText}>
+              {telemetry.cpuLoad}% CPU{telemetry.systemSimulated ? ' [SIM]' : ''}
+            </Text>
           </View>
 
           <View style={styles.telemetryPill}>

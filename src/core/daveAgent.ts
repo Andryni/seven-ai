@@ -2,7 +2,7 @@ import { useSevenStore } from '../store/useSevenStore';
 import { DaveProject } from '../types';
 import { selfHealing } from './selfHealing';
 import { storageService } from '../services/storageService';
-import { GoogleGenerativeAI } from '@google/generative-ai';
+import { resolveModel } from './geminiClient';
 
 class DaveAgentService {
   private static instance: DaveAgentService;
@@ -65,10 +65,8 @@ class DaveAgentService {
     let generatedViaAi = false;
     if (apiKey && apiKey.trim().length > 5) {
       try {
-        store.addTerminalLog('Synthesizing DOM architecture via Gemini 2.0 Flash...', 'cmd');
-        const genAI = new GoogleGenerativeAI(apiKey);
-        const model = genAI.getGenerativeModel({
-          model: 'gemini-3.6-flash',
+        store.addTerminalLog('Synthesizing DOM architecture via Gemini neural core...', 'cmd');
+        const { model } = await resolveModel(apiKey, {
           generationConfig: { responseMimeType: 'application/json' },
         });
 
@@ -197,9 +195,7 @@ Output MUST be a single valid JSON object with EXACTLY these 3 keys:
     }
 
     try {
-      const genAI = new GoogleGenerativeAI(apiKey);
-      const model = genAI.getGenerativeModel({
-        model: 'gemini-3.6-flash',
+      const { model } = await resolveModel(apiKey, {
         generationConfig: { responseMimeType: 'application/json' },
       });
 

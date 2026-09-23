@@ -80,7 +80,8 @@
         {
           "microphonePermission": "Allow SEVEN to use the microphone for voice commands and the \"Hey Seven\" wake word."
         }
-      ]
+      ],
+      "expo-quick-actions"
     ],
     "extra": {
       "eas": {

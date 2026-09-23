@@ -4,7 +4,7 @@ import { useSevenStore } from '../store/useSevenStore';
 import { ResearchDocument } from '../types';
 import { selfHealing } from '../core/selfHealing';
 import { storageService } from './storageService';
-import { GoogleGenerativeAI } from '@google/generative-ai';
+import { resolveModel } from '../core/geminiClient';
 import { Platform } from 'react-native';
 
 class ResearchService {
@@ -50,9 +50,7 @@ class ResearchService {
     if (apiKey && apiKey.trim().length > 5) {
       try {
         store.addTerminalLog('Synthesizing structured multi-section document...', 'cmd');
-        const genAI = new GoogleGenerativeAI(apiKey);
-        const model = genAI.getGenerativeModel({
-          model: 'gemini-3.6-flash',
+        const { model } = await resolveModel(apiKey, {
           generationConfig: { responseMimeType: 'application/json' },
         });
 

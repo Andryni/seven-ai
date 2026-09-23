@@ -112,6 +112,7 @@ export const WebViewPreview: React.FC<WebViewPreviewProps> = ({
         <View style={styles.tabGroup}>
           <TouchableOpacity
             style={[styles.tabBtn, activeTab === 'preview' && styles.activeTabBtn]}
+            accessibilityLabel="Preview tab"
             onPress={() => setActiveTab('preview')}
           >
             <Eye size={12} color={activeTab === 'preview' ? '#050508' : '#FFD700'} />
@@ -122,6 +123,7 @@ export const WebViewPreview: React.FC<WebViewPreviewProps> = ({
 
           <TouchableOpacity
             style={[styles.tabBtn, activeTab === 'html' && styles.activeTabBtn]}
+            accessibilityLabel="HTML tab"
             onPress={() => setActiveTab('html')}
           >
             <Code2 size={12} color={activeTab === 'html' ? '#050508' : '#00E5FF'} />
@@ -132,6 +134,7 @@ export const WebViewPreview: React.FC<WebViewPreviewProps> = ({
 
           <TouchableOpacity
             style={[styles.tabBtn, activeTab === 'css' && styles.activeTabBtn]}
+            accessibilityLabel="CSS tab"
             onPress={() => setActiveTab('css')}
           >
             <Code2 size={12} color={activeTab === 'css' ? '#050508' : '#00FFA3'} />
@@ -142,6 +145,7 @@ export const WebViewPreview: React.FC<WebViewPreviewProps> = ({
 
           <TouchableOpacity
             style={[styles.tabBtn, activeTab === 'js' && styles.activeTabBtn]}
+            accessibilityLabel="JS tab"
             onPress={() => setActiveTab('js')}
           >
             <Code2 size={12} color={activeTab === 'js' ? '#050508' : '#FFA500'} />
@@ -156,6 +160,7 @@ export const WebViewPreview: React.FC<WebViewPreviewProps> = ({
           <View style={styles.deviceToggles}>
             <TouchableOpacity
               style={[styles.deviceBtn, deviceMode === 'mobile' && styles.activeDeviceBtn]}
+              accessibilityLabel="Mobile preview"
               onPress={() => setDeviceMode('mobile')}
             >
               <Smartphone size={13} color={deviceMode === 'mobile' ? '#FFD700' : 'rgba(255,255,255,0.4)'} />
@@ -163,6 +168,7 @@ export const WebViewPreview: React.FC<WebViewPreviewProps> = ({
 
             <TouchableOpacity
               style={[styles.deviceBtn, deviceMode === 'tablet' && styles.activeDeviceBtn]}
+              accessibilityLabel="Tablet preview"
               onPress={() => setDeviceMode('tablet')}
             >
               <Tablet size={13} color={deviceMode === 'tablet' ? '#FFD700' : 'rgba(255,255,255,0.4)'} />
@@ -170,6 +176,7 @@ export const WebViewPreview: React.FC<WebViewPreviewProps> = ({
 
             <TouchableOpacity
               style={[styles.deviceBtn, deviceMode === 'desktop' && styles.activeDeviceBtn]}
+              accessibilityLabel="Desktop preview"
               onPress={() => setDeviceMode('desktop')}
             >
               <Monitor size={13} color={deviceMode === 'desktop' ? '#FFD700' : 'rgba(255,255,255,0.4)'} />
@@ -233,19 +240,19 @@ export const WebViewPreview: React.FC<WebViewPreviewProps> = ({
       {/* Bottom Action Footer */}
       <View style={styles.footerBar}>
         <View style={styles.footerLeft}>
-          <TouchableOpacity style={styles.footerBtn} onPress={() => setKey((k) => k + 1)}>
+          <TouchableOpacity style={styles.footerBtn} accessibilityLabel="Reload" onPress={() => setKey((k) => k + 1)}>
             <RefreshCw size={12} color="#FFD700" />
             <Text style={styles.footerBtnText}>Reload</Text>
           </TouchableOpacity>
 
-          <TouchableOpacity style={styles.footerBtn} onPress={handleOpenBrowser}>
+          <TouchableOpacity style={styles.footerBtn} accessibilityLabel="Open in browser" onPress={handleOpenBrowser}>
             <ExternalLink size={12} color="#00E5FF" />
             <Text style={styles.footerBtnText}>Open Browser</Text>
           </TouchableOpacity>
         </View>
 
         {onTriggerBug && (
-          <TouchableOpacity style={styles.healTriggerBtn} onPress={onTriggerBug}>
+          <TouchableOpacity style={styles.healTriggerBtn} accessibilityLabel="Simulate self-heal" onPress={onTriggerBug}>
             <Bug size={12} color="#FFF" />
             <Text style={styles.healTriggerText}>Simulate Self-Heal</Text>
           </TouchableOpacity>

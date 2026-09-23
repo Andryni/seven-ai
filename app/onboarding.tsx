@@ -660,6 +660,7 @@ export default function OnboardingScreen() {
                     <TouchableOpacity
                       key={code}
                       style={[styles.chip, uiLanguage === code && { borderColor: accent, backgroundColor: accent + '1F' }]}
+                      accessibilityLabel={code === 'en' ? 'English' : 'Français'}
                       onPress={() => setUiLanguage(code)}
                     >
                       <Text style={[styles.chipText, uiLanguage === code && { color: accent }]}>
@@ -678,7 +679,11 @@ export default function OnboardingScreen() {
               label={c.geminiKey}
               helper={c.geminiHelp}
               right={
-                <TouchableOpacity style={styles.linkBtn} onPress={() => openLink('https://aistudio.google.com/app/apikey')}>
+                <TouchableOpacity
+                  style={styles.linkBtn}
+                  accessibilityLabel={c.getKey}
+                  onPress={() => openLink('https://aistudio.google.com/app/apikey')}
+                >
                   <ExternalLink size={10} color="#050508" />
                   <Text style={styles.linkBtnText}>{c.getKey}</Text>
                 </TouchableOpacity>
@@ -696,6 +701,7 @@ export default function OnboardingScreen() {
               <View style={styles.verifyRow}>
                 <TouchableOpacity
                   style={[styles.verifyBtn, { borderColor: accent }]}
+                  accessibilityLabel={c.verify}
                   onPress={runNeuralCheck}
                   disabled={neural.phase === 'checking'}
                 >
@@ -716,7 +722,11 @@ export default function OnboardingScreen() {
                 label={c.fishKey}
                 helper={c.fishHelp}
                 right={
-                  <TouchableOpacity style={styles.linkBtn} onPress={() => openLink('https://fish.audio/go-api/')}>
+                  <TouchableOpacity
+                    style={styles.linkBtn}
+                    accessibilityLabel={c.getKey}
+                    onPress={() => openLink('https://fish.audio/go-api/')}
+                  >
                     <ExternalLink size={10} color="#050508" />
                     <Text style={styles.linkBtnText}>{c.getKey}</Text>
                   </TouchableOpacity>
@@ -734,6 +744,7 @@ export default function OnboardingScreen() {
                 <View style={styles.verifyRow}>
                   <TouchableOpacity
                     style={[styles.verifyBtn, { borderColor: accent }]}
+                    accessibilityLabel={c.verify}
                     onPress={runVoiceCheck}
                     disabled={voiceCheck.phase === 'checking'}
                   >
@@ -755,6 +766,7 @@ export default function OnboardingScreen() {
                         styles.chip,
                         voiceLanguage === option.code && { borderColor: accent, backgroundColor: accent + '1F' },
                       ]}
+                      accessibilityLabel={option.label}
                       onPress={() => {
                         haptics.light();
                         setVoiceLanguage(option.code);
@@ -780,6 +792,7 @@ export default function OnboardingScreen() {
                       <TouchableOpacity
                         key={lang}
                         style={[styles.voiceCard, active && { borderColor: accent, backgroundColor: accent + '14' }]}
+                        accessibilityLabel={model.label}
                         onPress={() => {
                           haptics.light();
                           setCustomVoiceId('');
@@ -805,6 +818,7 @@ export default function OnboardingScreen() {
                 />
                 <TouchableOpacity
                   style={[styles.previewBtn, { borderColor: accent + '88' }]}
+                  accessibilityLabel={testing ? c.stop : c.preview}
                   onPress={previewVoice}
                 >
                   {testing ? <Volume2 size={14} color={accent} /> : <AudioLines size={14} color={accent} />}
@@ -830,6 +844,7 @@ export default function OnboardingScreen() {
                         styles.themeCard,
                         themeId === option.id && { borderColor: option.color, backgroundColor: option.color + '14' },
                       ]}
+                      accessibilityLabel={option.label}
                       onPress={() => {
                         haptics.light();
                         setThemeId(option.id);
@@ -866,7 +881,12 @@ export default function OnboardingScreen() {
         {/* Controls */}
         <View style={styles.controls}>
           {stepIndex > 0 && (
-            <TouchableOpacity style={styles.ghostBtn} onPress={goBack} disabled={launching}>
+            <TouchableOpacity
+              style={styles.ghostBtn}
+              accessibilityLabel={c.back}
+              onPress={goBack}
+              disabled={launching}
+            >
               <ArrowLeft size={14} color="rgba(255,255,255,0.75)" />
               <Text style={styles.ghostBtnText}>{c.back}</Text>
             </TouchableOpacity>
@@ -876,6 +896,9 @@ export default function OnboardingScreen() {
               styles.primaryBtn,
               { backgroundColor: accent, opacity: canContinue && !launching ? 1 : 0.5 },
             ]}
+            accessibilityLabel={
+              stepIndex === STEPS.length - 1 ? (launching ? c.launching : c.launch) : c.next
+            }
             onPress={goNext}
             disabled={!canContinue || launching}
           >

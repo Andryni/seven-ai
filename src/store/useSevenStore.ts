@@ -107,6 +107,7 @@ const defaultConfig: AssistantConfig = {
   avatarStyle: 'gideon',
   wakeWordEnabled: false,
   gyroEnabled: true,
+  showIconLabels: false,
   isConfigured: false,
 };
 

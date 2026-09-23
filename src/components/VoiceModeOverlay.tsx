@@ -465,7 +465,7 @@ export const VoiceModeOverlay: React.FC<VoiceModeOverlayProps> = ({
 
       {/* Top bar */}
       <View style={styles.topBar}>
-        <TouchableOpacity style={styles.closeBtn} onPress={handleClose} hitSlop={10}>
+        <TouchableOpacity style={styles.closeBtn} accessibilityLabel="Close" onPress={handleClose} hitSlop={10}>
           <X size={18} color={palette.textDim} />
         </TouchableOpacity>
         <View style={styles.titleWrap}>

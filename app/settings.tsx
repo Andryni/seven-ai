@@ -45,6 +45,7 @@ import {
   Palette as PaletteIcon,
   Brain,
   Bell,
+  Monitor,
 } from 'lucide-react-native';
 
 const VOICE_LANGUAGES = [
@@ -320,7 +321,11 @@ export default function SettingsScreen() {
 
       {/* Screen Sub-Header */}
       <View style={styles.topNav}>
-        <TouchableOpacity style={styles.backBtn} onPress={() => router.push('/')}>
+        <TouchableOpacity
+          style={styles.backBtn}
+          accessibilityLabel={t('nav.dashboard', lang)}
+          onPress={() => router.push('/')}
+        >
           <ChevronLeft size={16} color={palette.accent} />
           <Text style={styles.backBtnText}>DASHBOARD</Text>
         </TouchableOpacity>
@@ -330,7 +335,11 @@ export default function SettingsScreen() {
           <Text style={styles.titleText}>SYSTEM &amp; CONNECTIVITY</Text>
         </View>
 
-        <TouchableOpacity style={styles.onboardingLink} onPress={() => router.push('/onboarding')}>
+        <TouchableOpacity
+          style={styles.onboardingLink}
+          accessibilityLabel={lang === 'fr' ? "Assistant de configuration" : 'Setup wizard'}
+          onPress={() => router.push('/onboarding')}
+        >
           <Text style={styles.onboardingLinkText}>WIZARD</Text>
         </TouchableOpacity>
       </View>
@@ -351,6 +360,7 @@ export default function SettingsScreen() {
                   styles.langChip,
                   config.theme === theme.id && styles.langChipActive,
                 ]}
+                accessibilityLabel={t(`settings.theme.${theme.id}`, lang)}
                 onPress={() => applyAccent(theme.id)}
               >
                 <View style={[styles.themeDot, { backgroundColor: theme.dot }]} />
@@ -376,6 +386,7 @@ export default function SettingsScreen() {
                     styles.langChip,
                     (config.uiMode ?? 'dark') === mode && styles.langChipActive,
                   ]}
+                  accessibilityLabel={t(`settings.mode.${mode}`, lang)}
                   onPress={() => applyUiMode(mode)}
                 >
                   <Text
@@ -398,6 +409,7 @@ export default function SettingsScreen() {
                 <TouchableOpacity
                   key={l}
                   style={[styles.langChip, lang === l && styles.langChipActive]}
+                  accessibilityLabel={l === 'en' ? 'English' : 'Français'}
                   onPress={() => applyLanguage(l)}
                 >
                   <Text style={[styles.langChipText, lang === l && styles.langChipTextActive]}>
@@ -437,6 +449,46 @@ export default function SettingsScreen() {
               thumbColor="#FFF"
             />
           </View>
+
+          {/* HUD Dock (Standby) — a real differentiator (desk/charger mode)
+              that used to be reachable only via a dashboard widget a user
+              could hide. Surfacing it here means it survives even if that
+              widget is hidden or the arrangement is reset. */}
+          <View style={[styles.appearanceRow, styles.appearanceRowSpaced]}>
+            <Text style={styles.inputLabel}>
+              {lang === 'fr' ? 'MODE BUREAU / CHARGEUR (HUD DOCK)' : 'DESK / CHARGER MODE (HUD DOCK)'}
+            </Text>
+            <TouchableOpacity
+              style={styles.getKeyBtn}
+              accessibilityLabel={lang === 'fr' ? 'Ouvrir le mode HUD Dock' : 'Open HUD Dock mode'}
+              onPress={() => {
+                haptics.medium();
+                router.push('/standby');
+              }}
+            >
+              <Monitor size={10} color={palette.bgDeep} />
+              <Text style={styles.getKeyBtnText}>{lang === 'fr' ? 'OUVRIR' : 'OPEN'}</Text>
+            </TouchableOpacity>
+          </View>
+
+          {/* Icon label captions — the app leans heavily on icon-only
+              buttons (chat header, history actions...); this toggle prints
+              a small caption under them for anyone unsure what a bare icon
+              does, without permanently widening every touch target. */}
+          <View style={[styles.appearanceRow, styles.appearanceRowSpaced]}>
+            <Text style={styles.inputLabel}>
+              {lang === 'fr' ? 'LIBELLÉS SOUS LES ICÔNES' : 'ICON BUTTON LABELS'}
+            </Text>
+            <Switch
+              value={config.showIconLabels ?? false}
+              onValueChange={(val) => {
+                haptics.light();
+                setConfig({ showIconLabels: val });
+              }}
+              trackColor={{ false: palette.bgElevated, true: palette.accent }}
+              thumbColor="#FFF"
+            />
+          </View>
         </View>
 
         {/* Section 1: Connectors & Integrations */}
@@ -462,7 +514,11 @@ export default function SettingsScreen() {
           }}
         />
         {googleState.connected && (
-          <TouchableOpacity style={styles.disconnectBtn} onPress={handleDisconnectGoogle}>
+          <TouchableOpacity
+            style={styles.disconnectBtn}
+            accessibilityLabel="Disconnect Google"
+            onPress={handleDisconnectGoogle}
+          >
             <Text style={styles.disconnectText}>DISCONNECT GOOGLE</Text>
           </TouchableOpacity>
         )}
@@ -525,7 +581,11 @@ export default function SettingsScreen() {
           <View style={styles.inputGroup}>
             <View style={styles.inputHeaderRow}>
               <Text style={styles.inputLabel}>GEMINI API KEY (FLASH & PRO)</Text>
-              <TouchableOpacity style={styles.getKeyBtn} onPress={handleGetApiKey}>
+              <TouchableOpacity
+                style={styles.getKeyBtn}
+                accessibilityLabel="Get Gemini API key"
+                onPress={handleGetApiKey}
+              >
                 <ExternalLink size={10} color={palette.bgDeep} />
                 <Text style={styles.getKeyBtnText}>GET API</Text>
               </TouchableOpacity>
@@ -558,7 +618,30 @@ export default function SettingsScreen() {
           </View>
 
           <View style={styles.inputGroup}>
-            <Text style={styles.inputLabel}>OPENROUTER KEY (OPTIONAL)</Text>
+            <View style={styles.inputHeaderRow}>
+              <Text style={styles.inputLabel}>OPENROUTER KEY (SECOND BRAIN, OPTIONAL)</Text>
+              <View
+                style={[
+                  styles.fallbackBadge,
+                  { borderColor: config.openRouterKey ? palette.success : palette.textFaint },
+                ]}
+              >
+                <View
+                  style={[
+                    styles.fallbackBadgeDot,
+                    { backgroundColor: config.openRouterKey ? palette.success : palette.textFaint },
+                  ]}
+                />
+                <Text
+                  style={[
+                    styles.fallbackBadgeText,
+                    { color: config.openRouterKey ? palette.success : palette.textFaint },
+                  ]}
+                >
+                  {config.openRouterKey ? 'SET' : 'NOT SET'}
+                </Text>
+              </View>
+            </View>
             <TextInput
               style={styles.textInput}
               value={openRouterKey}
@@ -567,7 +650,12 @@ export default function SettingsScreen() {
               placeholderTextColor={palette.textFaint}
               autoCapitalize="none"
               autoCorrect={false}
+              secureTextEntry
             />
+            <Text style={styles.oauthExplainerText}>
+              Used automatically when Gemini has no key configured or is unreachable —
+              real conversational answers instead of the local keyword engine.
+            </Text>
           </View>
         </View>
 
@@ -701,6 +789,7 @@ export default function SettingsScreen() {
                     styles.langChip,
                     voiceLanguage === voiceLang.code && styles.langChipActive,
                   ]}
+                  accessibilityLabel={voiceLang.label}
                   onPress={() => setVoiceLanguage(voiceLang.code)}
                 >
                   <Text
@@ -730,6 +819,7 @@ export default function SettingsScreen() {
                 <TouchableOpacity
                   key={option.id}
                   style={[styles.langChip, voiceEngine === option.id && styles.langChipActive]}
+                  accessibilityLabel={option.label}
                   onPress={() => {
                     haptics.light();
                     setVoiceEngine(option.id);
@@ -775,6 +865,7 @@ export default function SettingsScreen() {
                 <View style={styles.fishVerifyRow}>
                   <TouchableOpacity
                     style={[styles.fishVerifyBtn, { borderColor: palette.accent }]}
+                    accessibilityLabel="Verify Fish Audio key"
                     onPress={handleVerifyFish}
                     disabled={fishCheck.phase === 'checking'}
                   >
@@ -852,6 +943,9 @@ export default function SettingsScreen() {
           {/* Voice test button */}
           <TouchableOpacity
             style={[styles.voiceTestBtn, isTestingVoice && styles.voiceTestBtnActive]}
+            accessibilityLabel={
+              isTestingVoice ? t('common.stop', lang) : t('settings.testVoice', lang)
+            }
             onPress={handleTestVoice}
           >
             {isTestingVoice ? (
@@ -889,6 +983,7 @@ export default function SettingsScreen() {
 
             <TouchableOpacity
               style={styles.viewPatchBtn}
+              accessibilityLabel={lang === 'fr' ? 'Inspecter les correctifs' : 'Inspect patches'}
               onPress={() => setShowSelfHealingModal(true)}
             >
               <Bug size={12} color={palette.text} />
@@ -927,6 +1022,9 @@ export default function SettingsScreen() {
           {otaSupported && (
             <TouchableOpacity
               style={[styles.otaBtn, { borderColor: palette.accent }]}
+              accessibilityLabel={
+                otaPhase === 'ready' ? t('settings.updatesReady', lang) : t('settings.updatesCheck', lang)
+              }
               onPress={otaPhase === 'ready' ? handleRestartUpdate : handleCheckUpdate}
               disabled={otaPhase === 'checking' || otaReloading}
             >
@@ -946,7 +1044,11 @@ export default function SettingsScreen() {
         </View>
 
         {/* Save Settings Button */}
-        <TouchableOpacity style={styles.saveBtn} onPress={handleSaveProfile}>
+        <TouchableOpacity
+          style={styles.saveBtn}
+          accessibilityLabel={t('common.save', lang)}
+          onPress={handleSaveProfile}
+        >
           {savedSuccess ? (
             <>
               <CheckCircle2 size={16} color={palette.bgDeep} />
@@ -1090,6 +1192,26 @@ const settingsStyles = (t: Palette) =>
       justifyContent: 'space-between',
       alignItems: 'center',
       marginBottom: 4,
+    },
+    fallbackBadge: {
+      flexDirection: 'row',
+      alignItems: 'center',
+      gap: 4,
+      paddingHorizontal: 6,
+      paddingVertical: 2,
+      borderRadius: 8,
+      borderWidth: 1,
+    },
+    fallbackBadgeDot: {
+      width: 5,
+      height: 5,
+      borderRadius: 3,
+    },
+    fallbackBadgeText: {
+      fontFamily: FONT.mono,
+      fontSize: 7.5,
+      fontWeight: '800',
+      letterSpacing: 0.5,
     },
     inputLabel: {
       fontFamily: FONT.mono,

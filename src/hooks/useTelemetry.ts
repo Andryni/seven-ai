@@ -9,6 +9,11 @@ export interface TelemetryData {
   fps: number;
   latency: number;
   threads: number;
+  /** cpuLoad/ramUsage/latency/threads have no public RN API to read for
+      real — they are jittered placeholders. Always true, kept as a field
+      (rather than a hardcoded constant in the UI) so any future real
+      reading flips it honestly, the same pattern as battery/network. */
+  systemSimulated: boolean;
   batteryLevel: number;
   isCharging: boolean;
   batterySimulated: boolean;
@@ -30,6 +35,7 @@ export const useTelemetry = () => {
     fps: 60,
     latency: 16,
     threads: 18,
+    systemSimulated: true,
     batteryLevel: 100,
     isCharging: false,
     batterySimulated: true,

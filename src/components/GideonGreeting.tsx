@@ -101,6 +101,7 @@ export const GideonGreeting: React.FC<Props> = ({
       <TouchableOpacity
         activeOpacity={0.85}
         onPress={dismiss}
+        accessibilityLabel={`${sentence}. ${tapToDismiss}`}
         style={[styles.card, { borderColor: palette.accent + '44' }]}
       >
         <Animated.View

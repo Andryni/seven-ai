@@ -98,7 +98,7 @@ export const CodeEditorModal: React.FC<CodeEditorModalProps> = ({
               </View>
             </View>
 
-            <TouchableOpacity style={styles.closeBtn} onPress={onClose}>
+            <TouchableOpacity style={styles.closeBtn} accessibilityLabel="Close" onPress={onClose}>
               <X size={16} color="#FFD700" />
             </TouchableOpacity>
           </View>
@@ -107,6 +107,7 @@ export const CodeEditorModal: React.FC<CodeEditorModalProps> = ({
           <View style={styles.fileTabBar}>
             <TouchableOpacity
               style={[styles.fileTab, activeFile === 'index.html' && styles.fileTabActiveHtml]}
+              accessibilityLabel="index.html"
               onPress={() => setActiveFile('index.html')}
             >
               <FileCode size={12} color={activeFile === 'index.html' ? '#050508' : '#00E5FF'} />
@@ -122,6 +123,7 @@ export const CodeEditorModal: React.FC<CodeEditorModalProps> = ({
 
             <TouchableOpacity
               style={[styles.fileTab, activeFile === 'style.css' && styles.fileTabActiveCss]}
+              accessibilityLabel="style.css"
               onPress={() => setActiveFile('style.css')}
             >
               <FileCode size={12} color={activeFile === 'style.css' ? '#050508' : '#00FFA3'} />
@@ -137,6 +139,7 @@ export const CodeEditorModal: React.FC<CodeEditorModalProps> = ({
 
             <TouchableOpacity
               style={[styles.fileTab, activeFile === 'script.js' && styles.fileTabActiveJs]}
+              accessibilityLabel="script.js"
               onPress={() => setActiveFile('script.js')}
             >
               <FileCode size={12} color={activeFile === 'script.js' ? '#050508' : '#FFA500'} />
@@ -177,12 +180,12 @@ export const CodeEditorModal: React.FC<CodeEditorModalProps> = ({
             </View>
 
             <View style={styles.footerButtons}>
-              <TouchableOpacity style={styles.saveBtn} onPress={handleSave}>
+              <TouchableOpacity style={styles.saveBtn} accessibilityLabel="Save and hot-reload" onPress={handleSave}>
                 <Save size={14} color="#050508" />
                 <Text style={styles.saveBtnText}>SAVE &amp; HOT-RELOAD</Text>
               </TouchableOpacity>
 
-              <TouchableOpacity style={styles.closeModalBtn} onPress={onClose}>
+              <TouchableOpacity style={styles.closeModalBtn} accessibilityLabel="Close" onPress={onClose}>
                 <Text style={styles.closeModalText}>CLOSE</Text>
               </TouchableOpacity>
             </View>

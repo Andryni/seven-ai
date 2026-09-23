@@ -142,7 +142,17 @@ export const ConnectorCard: React.FC<ConnectorCardProps> = ({
       {/* Actions */}
       <View style={styles.cardActions}>
         {!connected ? (
-          <TouchableOpacity style={styles.primaryActionBtn} onPress={onConnect}>
+          <TouchableOpacity
+            style={styles.primaryActionBtn}
+            accessibilityLabel={
+              type === 'google'
+                ? 'Connect Google Workspace'
+                : type === 'instagram'
+                ? 'Connect via browser'
+                : 'Configure API keys'
+            }
+            onPress={onConnect}
+          >
             <ExternalLink size={12} color="#050508" />
             <Text style={styles.primaryActionText}>
               {type === 'google'
@@ -154,12 +164,16 @@ export const ConnectorCard: React.FC<ConnectorCardProps> = ({
           </TouchableOpacity>
         ) : (
           <>
-            <TouchableOpacity style={styles.syncBtn} onPress={onSync}>
+            <TouchableOpacity style={styles.syncBtn} accessibilityLabel="Sync live" onPress={onSync}>
               <RefreshCw size={11} color="#FFD700" />
               <Text style={styles.syncBtnText}>Sync Live</Text>
             </TouchableOpacity>
 
-            <TouchableOpacity style={styles.detailsBtn} onPress={onViewDetails}>
+            <TouchableOpacity
+              style={styles.detailsBtn}
+              accessibilityLabel="View synced data"
+              onPress={onViewDetails}
+            >
               <Text style={styles.detailsBtnText}>View Synced Data</Text>
             </TouchableOpacity>
           </>

@@ -1,4 +1,4 @@
-import React, { useState, useEffect, useMemo } from 'react';
+import React, { useState, useMemo } from 'react';
 import { FONT, TABULAR } from '../theme/typography';
 import {
   View,
@@ -8,11 +8,11 @@ import {
   Share,
   Platform,
   Image,
-  Animated,
-  Easing,
 } from 'react-native';
 import * as Clipboard from 'expo-clipboard';
 import { ChatMessage } from '../types';
+import { MarkdownText } from './MarkdownText';
+import { TypingDots, ScanBar } from './LoadingIndicators';
 import {
   Cpu,
   User,
@@ -35,74 +35,6 @@ interface ChatBubbleProps {
   message: ChatMessage;
   onAction?: (actionType: string, payload?: unknown) => void;
 }
-
-/**
- * Three pulsing dots shown while SEVEN is processing the directive.
- * Isolated component so its hooks never depend on the parent's render order.
- */
-const TypingDots: React.FC<{ color?: string }> = ({ color = '#FFD700' }) => {
-  const dots = useMemo(
-    () => [new Animated.Value(0.25), new Animated.Value(0.25), new Animated.Value(0.25)],
-    []
-  );
-
-  useEffect(() => {
-    const anims = dots.map((d, i) =>
-      Animated.loop(
-        Animated.sequence([
-          Animated.delay(i * 170),
-          Animated.timing(d, { toValue: 1, duration: 300, easing: Easing.quad, useNativeDriver: true }),
-          Animated.timing(d, { toValue: 0.25, duration: 300, easing: Easing.quad, useNativeDriver: true }),
-          Animated.delay((2 - i) * 170),
-        ])
-      )
-    );
-    anims.forEach((a) => a.start());
-    return () => anims.forEach((a) => a.stop());
-  }, [dots]);
-
-  return (
-    <View style={styles.dotsRow}>
-      {dots.map((d, i) => (
-        <Animated.View key={i} style={[styles.dot, { opacity: d, backgroundColor: color }]} />
-      ))}
-    </View>
-  );
-};
-
-/**
- * Indeterminate scanning bar shown while a tool/action is running, so the user
- * sees what SEVEN is doing with live motion rather than static text.
- */
-const ScanBar: React.FC<{ color?: string }> = ({ color = '#00E5FF' }) => {
-  const x = useMemo(() => new Animated.Value(0), []);
-
-  useEffect(() => {
-    const loop = Animated.loop(
-      Animated.sequence([
-        Animated.timing(x, {
-          toValue: 1,
-          duration: 1100,
-          easing: Easing.inOut(Easing.quad),
-          useNativeDriver: true,
-        }),
-        Animated.timing(x, { toValue: 0, duration: 0, useNativeDriver: true }),
-      ])
-    );
-    loop.start();
-    return () => loop.stop();
-  }, [x]);
-
-  const translateX = x.interpolate({ inputRange: [0, 1], outputRange: [-120, 240] });
-
-  return (
-    <View style={styles.scanTrack}>
-      <Animated.View
-        style={[styles.scanBar, { backgroundColor: color, transform: [{ translateX }] }]}
-      />
-    </View>
-  );
-};
 
 export const ChatBubble: React.FC<ChatBubbleProps> = ({ message, onAction }) => {
   const isUser = message.sender === 'user';
@@ -207,12 +139,25 @@ export const ChatBubble: React.FC<ChatBubbleProps> = ({ message, onAction }) => 
             )}
 
             {hasPlainContent && (
-              <Text style={[styles.bodyText, isUser ? styles.userBodyText : styles.sevenBodyText]}>
-                {progressLines.length > 0
-                  ? // Strip streamed tool-progress markers from the visible answer
-                    message.text.replace(/\u27e8[^\u27e9]*\u27e9/g, '').replace(/^\s+/, '')
-                  : message.text}
-              </Text>
+              isUser ? (
+                // User turns are typed, plain text — Markdown parsing would
+                // just be noise on "what's 2 * 3?" or a pasted URL.
+                <Text style={[styles.bodyText, styles.userBodyText]}>{message.text}</Text>
+              ) : (
+                // Gemini answers routinely use **bold**, lists and fenced code —
+                // render them instead of showing the raw asterisks/backticks.
+                <MarkdownText
+                  text={
+                    progressLines.length > 0
+                      ? message.text.replace(/\u27e8[^\u27e9]*\u27e9/g, '').replace(/^\s+/, '')
+                      : message.text
+                  }
+                  color="#FFF8E1"
+                  accentColor="#FFD700"
+                  fontSize={13.5}
+                  lineHeight={20}
+                />
+              )
             )}
           </>
         )}
@@ -220,7 +165,11 @@ export const ChatBubble: React.FC<ChatBubbleProps> = ({ message, onAction }) => 
         {/* Copy / Share actions on assistant replies (once text exists) */}
         {!isUser && !isSystem && message.text.trim().length > 0 && (
           <View style={styles.msgActions}>
-            <TouchableOpacity style={styles.msgActionBtn} onPress={handleCopy}>
+            <TouchableOpacity
+              style={styles.msgActionBtn}
+              accessibilityLabel={copied ? 'Copied' : 'Copy message'}
+              onPress={handleCopy}
+            >
               {copied ? (
                 <>
                   <Check size={11} color="#00FFA3" />
@@ -234,7 +183,11 @@ export const ChatBubble: React.FC<ChatBubbleProps> = ({ message, onAction }) => 
               )}
             </TouchableOpacity>
 
-            <TouchableOpacity style={styles.msgActionBtn} onPress={handleShare}>
+            <TouchableOpacity
+              style={styles.msgActionBtn}
+              accessibilityLabel="Share message"
+              onPress={handleShare}
+            >
               <Share2 size={11} color="#00E5FF" />
               <Text style={[styles.msgActionText, styles.msgActionTextShare]}>SHARE</Text>
             </TouchableOpacity>
@@ -287,6 +240,7 @@ export const ChatBubble: React.FC<ChatBubbleProps> = ({ message, onAction }) => 
                 <>
                   <TouchableOpacity
                     style={styles.actionBtnCyan}
+                    accessibilityLabel="Live Preview"
                     onPress={() => onAction?.('open_dave_preview', message.toolCall)}
                   >
                     <Eye size={12} color="#000" />
@@ -294,6 +248,7 @@ export const ChatBubble: React.FC<ChatBubbleProps> = ({ message, onAction }) => 
                   </TouchableOpacity>
                   <TouchableOpacity
                     style={styles.actionBtnOutline}
+                    accessibilityLabel="Open in browser"
                     onPress={() => onAction?.('open_browser', message.toolCall)}
                   >
                     <ExternalLink size={12} color="#00E5FF" />
@@ -305,6 +260,7 @@ export const ChatBubble: React.FC<ChatBubbleProps> = ({ message, onAction }) => 
               {message.toolCall.name === 'organizer' && (
                 <TouchableOpacity
                   style={styles.actionBtnGold}
+                  accessibilityLabel="Undo organization"
                   onPress={() => onAction?.('undo_organize', message.toolCall)}
                 >
                   <RotateCcw size={12} color="#000" />
@@ -315,6 +271,7 @@ export const ChatBubble: React.FC<ChatBubbleProps> = ({ message, onAction }) => 
               {message.toolCall.name === 'research_pdf' && (
                 <TouchableOpacity
                   style={styles.actionBtnGold}
+                  accessibilityLabel="Open PDF document"
                   onPress={() => onAction?.('open_pdf', message.toolCall)}
                 >
                   <FileText size={12} color="#000" />
@@ -325,6 +282,7 @@ export const ChatBubble: React.FC<ChatBubbleProps> = ({ message, onAction }) => 
               {message.toolCall.name === 'self_heal' && (
                 <TouchableOpacity
                   style={styles.actionBtnPurple}
+                  accessibilityLabel="Inspect patch log"
                   onPress={() => onAction?.('inspect_patch', message.toolCall)}
                 >
                   <ShieldCheck size={12} color="#FFF" />
@@ -590,16 +548,6 @@ const styles = StyleSheet.create({
     height: 180,
     borderRadius: 6,
   },
-  dotsRow: {
-    flexDirection: 'row',
-    gap: 4,
-    alignItems: 'center',
-  },
-  dot: {
-    width: 6,
-    height: 6,
-    borderRadius: 3,
-  },
   pendingRow: {
     flexDirection: 'row',
     alignItems: 'center',
@@ -633,18 +581,5 @@ const styles = StyleSheet.create({
     fontSize: 10,
     color: 'rgba(0, 229, 255, 0.8)',
     flex: 1,
-  },
-  scanTrack: {
-    height: 2,
-    marginTop: 8,
-    marginBottom: 2,
-    borderRadius: 1,
-    backgroundColor: 'rgba(255, 255, 255, 0.08)',
-    overflow: 'hidden',
-  },
-  scanBar: {
-    width: 90,
-    height: 2,
-    borderRadius: 1,
   },
 });

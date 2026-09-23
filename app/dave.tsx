@@ -13,6 +13,7 @@ import { ParticleBackground } from '../src/components/ParticleBackground';
 import { HudHeader } from '../src/components/HudHeader';
 import { TerminalLog } from '../src/components/TerminalLog';
 import { ScreenReveal } from '../src/components/ScreenReveal';
+import { TypingDots } from '../src/components/LoadingIndicators';
 import { BottomNav } from '../src/components/BottomNav';
 import { WebViewPreview } from '../src/components/WebViewPreview';
 import { SelfHealingModal } from '../src/components/SelfHealingModal';
@@ -141,7 +142,11 @@ export default function DaveAgentScreen() {
       {/* Screen Sub-Header */}
       <ScreenReveal index={0}>
       <View style={styles.topNav}>
-        <TouchableOpacity style={styles.backBtn} onPress={() => router.push('/')}>
+        <TouchableOpacity
+          style={styles.backBtn}
+          accessibilityLabel={t('nav.dashboard', lang)}
+          onPress={() => router.push('/')}
+        >
           <ChevronLeft size={16} color={palette.accent} />
           <Text style={styles.backBtnText}>DASHBOARD</Text>
         </TouchableOpacity>
@@ -154,6 +159,7 @@ export default function DaveAgentScreen() {
         <View style={styles.topNavRight}>
           <TouchableOpacity
             style={styles.templateBtn}
+            accessibilityLabel="Templates"
             onPress={() => {
               haptics.light();
               setShowTemplateHub(true);
@@ -165,6 +171,7 @@ export default function DaveAgentScreen() {
 
           <TouchableOpacity
             style={styles.antiPanicBtn}
+            accessibilityLabel={lang === 'fr' ? 'Journal auto-réparation AST' : 'AST self-healing log'}
             onPress={() => setShowSelfHealingModal(true)}
           >
             <ShieldAlert size={13} color={palette.error} />
@@ -193,13 +200,15 @@ export default function DaveAgentScreen() {
             />
             <TouchableOpacity
               style={[styles.synthesizeBtn, isSynthesizing && styles.btnLoading]}
+              accessibilityLabel={t('dave.build', lang)}
               onPress={() => handleSynthesize()}
               disabled={isSynthesizing}
             >
               <Play size={14} color={palette.bgDeep} />
               <Text style={styles.synthesizeText}>
-                {isSynthesizing ? 'BUILDING...' : t('dave.build', lang)}
+                {isSynthesizing ? 'BUILDING' : t('dave.build', lang)}
               </Text>
+              {isSynthesizing && <TypingDots color={palette.bgDeep} size={4} />}
             </TouchableOpacity>
           </View>
 
@@ -214,6 +223,7 @@ export default function DaveAgentScreen() {
               <TouchableOpacity
                 key={i}
                 style={styles.presetChip}
+                accessibilityLabel={p}
                 onPress={() => {
                   setPrompt(p);
                   handleSynthesize(p);
@@ -245,13 +255,15 @@ export default function DaveAgentScreen() {
                 />
                 <TouchableOpacity
                   style={[styles.refineBtn, (isRefining || !refineText.trim()) && styles.btnLoading]}
+                  accessibilityLabel={t('dave.refine', lang)}
                   onPress={handleRefine}
                   disabled={isRefining || !refineText.trim()}
                 >
                   <Wand2 size={13} color={palette.bgDeep} />
                   <Text style={styles.refineBtnText}>
-                    {isRefining ? 'APPLYING...' : t('dave.refine', lang)}
+                    {isRefining ? 'APPLYING' : t('dave.refine', lang)}
                   </Text>
+                  {isRefining && <TypingDots color={palette.bgDeep} size={4} />}
                 </TouchableOpacity>
               </View>
             </View>
@@ -278,6 +290,7 @@ export default function DaveAgentScreen() {
 
               <TouchableOpacity
                 style={styles.editCodeBtn}
+                accessibilityLabel={lang === 'fr' ? 'Modifier le code' : 'Edit code'}
                 onPress={() => {
                   haptics.light();
                   setShowCodeEditor(true);

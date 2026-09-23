@@ -96,7 +96,7 @@ export const ProjectManagerModal: React.FC<ProjectManagerModalProps> = ({
               </View>
             </View>
 
-            <TouchableOpacity style={styles.closeBtn} onPress={onClose}>
+            <TouchableOpacity style={styles.closeBtn} accessibilityLabel="Close" onPress={onClose}>
               <X size={16} color="#FFD700" />
             </TouchableOpacity>
           </View>
@@ -111,6 +111,7 @@ export const ProjectManagerModal: React.FC<ProjectManagerModalProps> = ({
                   <TouchableOpacity
                     key={t.id}
                     style={[styles.templateCard, { borderColor: t.color + '44' }]}
+                    accessibilityLabel={t.name}
                     onPress={() => handlePickTemplate(t)}
                   >
                     <View style={[styles.iconWrap, { backgroundColor: t.color + '18' }]}>
@@ -134,6 +135,7 @@ export const ProjectManagerModal: React.FC<ProjectManagerModalProps> = ({
                 <TouchableOpacity
                   key={p.id}
                   style={styles.projectCard}
+                  accessibilityLabel={p.name}
                   onPress={() => handlePickProject(p)}
                 >
                   <FolderCode size={16} color="#FFD700" />
@@ -151,7 +153,7 @@ export const ProjectManagerModal: React.FC<ProjectManagerModalProps> = ({
 
           {/* Footer */}
           <View style={styles.modalFooter}>
-            <TouchableOpacity style={styles.closeModalBtn} onPress={onClose}>
+            <TouchableOpacity style={styles.closeModalBtn} accessibilityLabel="Dismiss" onPress={onClose}>
               <Text style={styles.closeModalText}>DISMISS</Text>
             </TouchableOpacity>
           </View>

@@ -70,10 +70,9 @@ export const GideonAvatar: React.FC<GideonAvatarProps> = ({
   const px = (units: number) => (units * size) / 200;
   const palette = useTheme();
 
-  // NOTE: a WebGL head (./GideonHead3D + src/core/gideonHeadScene) was built and
-  // wired here for a while. Side by side the vector face reads as the more
-  // realistic one, so Gideon is the SVG face again; the WebGL scene is still in
-  // the tree, unused, if the experiment is ever worth revisiting.
+  // NOTE: an earlier WebGL head experiment was built and wired here for a
+  // while. Side by side the vector face read as the more realistic one, so
+  // Gideon stayed the SVG face and the WebGL scene was removed from the tree.
 
   // ------------------------------------------------------------ Hologram hue
   // The hologram is made of the same light as the screen it stands on: shadows

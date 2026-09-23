@@ -107,6 +107,7 @@ export default function StandbyScreen() {
         <View style={styles.topNav}>
           <TouchableOpacity
             style={styles.backBtn}
+            accessibilityLabel={language === 'fr' ? 'Retour' : 'Back'}
             onPress={() => {
               haptics.light();
               router.back();

@@ -24,6 +24,7 @@ import {
   ShieldCheck,
   BatteryCharging,
   Globe,
+  HardDrive,
 } from 'lucide-react-native';
 
 interface MorningBriefingModalProps {
@@ -75,7 +76,7 @@ export const MorningBriefingModal: React.FC<MorningBriefingModalProps> = ({
               </View>
             </View>
 
-            <TouchableOpacity style={styles.closeBtn} onPress={onClose}>
+            <TouchableOpacity style={styles.closeBtn} accessibilityLabel="Close" onPress={onClose}>
               <X size={16} color="#FFD700" />
             </TouchableOpacity>
           </View>
@@ -157,10 +158,17 @@ export const MorningBriefingModal: React.FC<MorningBriefingModalProps> = ({
                   <Text style={styles.healthLabel}>{briefing.deviceHealth.battery}</Text>
                 </View>
                 <View style={styles.healthPill}>
+                  <HardDrive size={12} color="#FFD700" />
+                  <Text style={styles.healthLabel}>{briefing.deviceHealth.storageUsage}</Text>
+                </View>
+                <View style={styles.healthPill}>
                   <ShieldCheck size={12} color="#00E5FF" />
                   <Text style={styles.healthLabel}>{briefing.deviceHealth.astStatus}</Text>
                 </View>
               </View>
+              {!briefing.deviceHealth.isLive && (
+                <Text style={styles.simTag}>[SIM] Device metrics unavailable on this platform</Text>
+              )}
             </View>
 
             {/* Audio Visualizer during speech */}
@@ -173,6 +181,7 @@ export const MorningBriefingModal: React.FC<MorningBriefingModalProps> = ({
           <View style={styles.modalFooter}>
             <TouchableOpacity
               style={[styles.voiceBtn, isSpeaking && styles.voiceBtnActive]}
+              accessibilityLabel={isSpeaking ? 'Stop narration' : 'Read briefing aloud'}
               onPress={handleSpeakBriefing}
             >
               {isSpeaking ? (
@@ -188,7 +197,7 @@ export const MorningBriefingModal: React.FC<MorningBriefingModalProps> = ({
               )}
             </TouchableOpacity>
 
-            <TouchableOpacity style={styles.dismissBtn} onPress={onClose}>
+            <TouchableOpacity style={styles.dismissBtn} accessibilityLabel="Dismiss" onPress={onClose}>
               <Text style={styles.dismissText}>DISMISS</Text>
             </TouchableOpacity>
           </View>
@@ -337,6 +346,7 @@ const styles = StyleSheet.create({
   },
   healthRow: {
     flexDirection: 'row',
+    flexWrap: 'wrap',
     gap: 8,
   },
   healthPill: {
@@ -355,6 +365,12 @@ const styles = StyleSheet.create({
     fontFamily: FONT.mono,
     color: '#FFF',
     fontSize: 9,
+  },
+  simTag: {
+    fontFamily: FONT.mono,
+    color: 'rgba(255,255,255,0.35)',
+    fontSize: 8,
+    marginTop: 4,
   },
   visualizerContainer: {
     marginVertical: 6,

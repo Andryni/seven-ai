@@ -55,7 +55,7 @@ export const SelfHealingModal: React.FC<SelfHealingModalProps> = ({
               </View>
             </View>
 
-            <TouchableOpacity style={styles.closeBtn} onPress={onClose}>
+            <TouchableOpacity style={styles.closeBtn} accessibilityLabel="Close" onPress={onClose}>
               <X size={16} color="#FFD700" />
             </TouchableOpacity>
           </View>
@@ -78,6 +78,7 @@ export const SelfHealingModal: React.FC<SelfHealingModalProps> = ({
 
               <TouchableOpacity
                 style={[styles.simulateBtn, isHealing && styles.simulatingBtn]}
+                accessibilityLabel="Trigger bug simulation and auto-fix"
                 onPress={handleSimulate}
                 disabled={isHealing}
               >
@@ -130,7 +131,7 @@ export const SelfHealingModal: React.FC<SelfHealingModalProps> = ({
 
           {/* Footer */}
           <View style={styles.modalFooter}>
-            <TouchableOpacity style={styles.dismissBtn} onPress={onClose}>
+            <TouchableOpacity style={styles.dismissBtn} accessibilityLabel="Dismiss" onPress={onClose}>
               <Text style={styles.dismissBtnText}>DISMISS</Text>
             </TouchableOpacity>
           </View>

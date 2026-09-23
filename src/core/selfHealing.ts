@@ -1,7 +1,7 @@
 import { useSevenStore } from '../store/useSevenStore';
 import { PatchLog } from '../types';
 import { storageService } from '../services/storageService';
-import { GoogleGenerativeAI } from '@google/generative-ai';
+import { resolveModel } from './geminiClient';
 
 class SelfHealingEngine {
   private static instance: SelfHealingEngine;
@@ -61,8 +61,7 @@ class SelfHealingEngine {
       if (apiKey && apiKey.trim().length > 5) {
         try {
           store.addTerminalLog('Querying Gemini AST synthesizer matrix...', 'cmd');
-          const genAI = new GoogleGenerativeAI(apiKey);
-          const model = genAI.getGenerativeModel({ model: 'gemini-3.6-flash' });
+          const { model } = await resolveModel(apiKey, {});
           const prompt = `You are the SEVEN Anti-Panic Self-Healing Engine. Fix this buggy code:\n\nTarget: ${targetFile}\nError: ${message}\nCode:\n${originalCode}\n\nReturn ONLY the fixed code without markdown backticks or commentary.`;
           const result = await model.generateContent(prompt);
           fixedCode = result.response

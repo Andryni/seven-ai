@@ -3,7 +3,9 @@ import { FONT } from '../src/theme/typography';
 import { View, Text, ScrollView } from 'react-native';
 import { useRouter } from 'expo-router';
 import NetInfo from '@react-native-community/netinfo';
+import { useQuickActionCallback } from 'expo-quick-actions/hooks';
 import { useSevenStore } from '../src/store/useSevenStore';
+import { quickActionsService, QUICK_ACTION_IDS } from '../src/services/quickActionsService';
 import { ParticleBackground } from '../src/components/ParticleBackground';
 import { HudHeader } from '../src/components/HudHeader';
 import { OrbView } from '../src/components/OrbView';
@@ -234,6 +236,37 @@ export default function DashboardScreen() {
     });
     return () => unsubscribe();
   }, [handleSend, addTerminalLog]);
+
+  // Long-press-the-app-icon shortcuts: JARVIS reachable without opening the
+  // app first. Re-registered whenever the UI language changes so the labels
+  // stay localized.
+  useEffect(() => {
+    quickActionsService.registerDefaultActions(language);
+  }, [language]);
+
+  useQuickActionCallback(
+    useCallback(
+      (action) => {
+        switch (action.id) {
+          case QUICK_ACTION_IDS.organize:
+            router.push('/organizer');
+            break;
+          case QUICK_ACTION_IDS.briefing:
+            setShowBriefingModal(true);
+            break;
+          case QUICK_ACTION_IDS.research:
+            router.push('/research');
+            break;
+          case QUICK_ACTION_IDS.build:
+            router.push('/dave');
+            break;
+          default:
+            break;
+        }
+      },
+      [router]
+    )
+  );
 
   const [wakeWordActive, setWakeWordActive] = useState(false);
   const wakeWordRef = useRef(false);
@@ -670,6 +703,7 @@ export default function DashboardScreen() {
                 <TapScale
                   scaleTo={0.92}
                   style={styles.smallBtn}
+                  accessibilityLabel={t('dash.restoreHidden', language)}
                   onPress={() => {
                     haptics.medium();
                     setConfig({ widgetHidden: [] });
@@ -682,6 +716,9 @@ export default function DashboardScreen() {
               <TapScale
                 scaleTo={0.92}
                 style={[styles.arrangeBtn, arranging && styles.arrangeBtnActive]}
+                accessibilityLabel={
+                  arranging ? t('dash.arrangeDone', language) : t('dash.arrange', language)
+                }
                 onPress={() => {
                   haptics.medium();
                   setArranging((value) => !value);
@@ -699,7 +736,12 @@ export default function DashboardScreen() {
             <View style={styles.arrangeHint}>
               <EyeOff size={10} color={palette.textDim} />
               <Text style={styles.arrangeHintText}>{t('dash.arrangeHint', language)}</Text>
-              <TapScale scaleTo={0.92} style={styles.resetBtn} onPress={resetDeck}>
+              <TapScale
+                scaleTo={0.92}
+                style={styles.resetBtn}
+                accessibilityLabel={t('dash.reset', language)}
+                onPress={resetDeck}
+              >
                 <Text style={styles.resetBtnText}>{t('dash.reset', language)}</Text>
               </TapScale>
             </View>
@@ -721,6 +763,7 @@ export default function DashboardScreen() {
             <TapScale
               scaleTo={0.95}
               style={styles.commandBtn}
+              accessibilityLabel={t('dash.organize', language)}
               onPress={() => handleSend('organize downloads')}
             >
               <FolderSync size={12} color={palette.success} />
@@ -729,6 +772,7 @@ export default function DashboardScreen() {
             <TapScale
               scaleTo={0.95}
               style={styles.commandBtn}
+              accessibilityLabel={t('dash.emails', language)}
               onPress={() => handleSend('check unread emails')}
             >
               <Mail size={12} color={palette.info} />
@@ -737,6 +781,7 @@ export default function DashboardScreen() {
             <TapScale
               scaleTo={0.95}
               style={styles.commandBtn}
+              accessibilityLabel={t('dash.briefing', language)}
               onPress={() => {
                 haptics.light();
                 setShowBriefingModal(true);
@@ -766,6 +811,7 @@ export default function DashboardScreen() {
                 key={prompt}
                 scaleTo={0.94}
                 style={styles.promptChip}
+                accessibilityLabel={prompt}
                 onPress={() => handleSend(prompt)}
               >
                 <Sparkles size={10} color={palette.accent} />

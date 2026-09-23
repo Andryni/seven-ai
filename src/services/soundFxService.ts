@@ -114,6 +114,36 @@ class SoundFxService {
   }
 
   /**
+   * Play a paper-scan sweep — used to open the Research module's PDF
+   * synthesis, distinct from the organizer's whoosh and Dave's build chime
+   * so each tool has its own audio signature rather than one shared "ping".
+   */
+  public playResearchScan() {
+    try {
+      const ctx = this.getAudioContext();
+      if (!ctx) return;
+
+      const now = ctx.currentTime;
+      const osc = ctx.createOscillator();
+      const gain = ctx.createGain();
+
+      osc.type = 'square';
+      osc.frequency.setValueAtTime(320, now);
+      osc.frequency.linearRampToValueAtTime(560, now + 0.18);
+      osc.frequency.linearRampToValueAtTime(320, now + 0.34);
+
+      gain.gain.setValueAtTime(0.035, now);
+      gain.gain.exponentialRampToValueAtTime(0.001, now + 0.36);
+
+      osc.connect(gain);
+      gain.connect(ctx.destination);
+
+      osc.start(now);
+      osc.stop(now + 0.36);
+    } catch {}
+  }
+
+  /**
    * Play laser whoosh for file organizer
    */
   public playLaserWhoosh() {

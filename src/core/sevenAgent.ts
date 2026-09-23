@@ -1,4 +1,6 @@
-import { GoogleGenerativeAI, FunctionDeclaration, Part, SchemaType } from '@google/generative-ai';
+import { FunctionDeclaration, Part, SchemaType } from '@google/generative-ai';
+import { resolveModel } from './geminiClient';
+import { openRouterService } from '../services/openRouterService';
 import { useSevenStore } from '../store/useSevenStore';
 import { ChatMessage } from '../types';
 import { fileOrganizer } from '../services/fileOrganizer';
@@ -289,6 +291,18 @@ export class SevenAgent {
     }
 
     let res: ChatResult;
+    // Second brain before the weak keyword engine: if the user configured an
+    // OpenRouter key, a real (if less integrated) model beats string-matching.
+    if (openRouterService.isConfigured(store.config.openRouterKey)) {
+      try {
+        res = await this.chatWithOpenRouter(userPrompt);
+        const text = `${notice}${res.text}`;
+        if (onToken) await this.replayAsChunks(text, onToken);
+        return { ...res, text };
+      } catch (e: any) {
+        store.addTerminalLog(`OpenRouter fallback failed (${e?.message || e}); using local engine.`, 'warn');
+      }
+    }
     try {
       res = await this.chatLocalFallback(userPrompt, quota ? 'quota' : 'offline');
     } catch {
@@ -453,7 +467,10 @@ export class SevenAgent {
       case 'search_web': {
         const query = String(args.query || '').trim();
         onEvent?.(`WEB INTELLIGENCE: querying live index for "${query}"...`);
-        const searchRes = await webSearchService.searchWeb(query);
+        const searchRes = await webSearchService.searchWeb(
+          query,
+          (store.config.language || 'en') === 'fr' ? 'fr' : 'en'
+        );
         return {
           text: searchRes.summary,
           toolCall: {
@@ -629,13 +646,23 @@ PERMANENT USER MEMORY (follow these preferences in every answer):
 ${notes}`;
   }
 
-  private getModel(apiKey: string) {
-    const genAI = new GoogleGenerativeAI(apiKey);
-    return genAI.getGenerativeModel({
-      model: 'gemini-3.6-flash',
+  /**
+   * Resolves a working Gemini model, trying a short list of known-good ids
+   * (see `geminiClient.ts`) instead of hardcoding one — a renamed/retired
+   * model id used to fail as an opaque 404 that silently dropped the whole
+   * agent to the weak keyword fallback with no clue why.
+   */
+  private async getModel(apiKey: string) {
+    const { model, modelId } = await resolveModel(apiKey, {
       systemInstruction: this.getSystemInstruction(),
       tools: [{ functionDeclarations: TOOL_DECLARATIONS }],
     });
+    if (modelId !== 'gemini-3.6-flash') {
+      useSevenStore
+        .getState()
+        .addTerminalLog(`NEURAL CORE: using fallback model "${modelId}" (primary unavailable)`, 'warn');
+    }
+    return model;
   }
 
   /**
@@ -675,6 +702,39 @@ ${notes}`;
     return contents;
   }
 
+  /**
+   * Plain conversational completion via OpenRouter — the second brain used
+   * when Gemini has no key configured or is unreachable. Deliberately no
+   * tool calling here: a handful of recent turns plus the system
+   * instruction is enough for it to behave like SEVEN in conversation, and
+   * keeping it text-only avoids maintaining a second Director pipeline.
+   */
+  private async chatWithOpenRouter(userPrompt: string): Promise<{ text: string }> {
+    const store = useSevenStore.getState();
+    const config = store.config;
+    const apiKey = (config.openRouterKey || '').trim();
+
+    store.addTerminalLog('Gemini unavailable — routing through OpenRouter...', 'cmd');
+
+    const history = useSevenStore.getState().chatHistory;
+    const recent = history
+      .filter((m) => (m.sender === 'user' || m.sender === 'seven') && m.text.trim().length > 0)
+      .slice(-MAX_HISTORY_MESSAGES);
+
+    const messages = [
+      { role: 'system' as const, content: this.getSystemInstruction() },
+      ...recent.map((m) => ({
+        role: (m.sender === 'user' ? 'user' : 'assistant') as 'user' | 'assistant',
+        content: m.text,
+      })),
+      { role: 'user' as const, content: userPrompt },
+    ];
+
+    const text = await openRouterService.chat(apiKey, messages);
+    store.addTerminalLog('OpenRouter response received [200 OK]', 'success');
+    return { text };
+  }
+
   private async chatWithGemini(
     userPrompt: string,
     onToken?: (token: string) => void
@@ -684,7 +744,7 @@ ${notes}`;
     const apiKey = config.geminiApiKey;
 
     store.addTerminalLog('Querying Gemini 2.0 Flash neural brain [function calling]...', 'cmd');
-    const model = this.getModel(apiKey);
+    const model = await this.getModel(apiKey);
 
     // Multi-turn context: replay prior exchanges plus the current prompt.
     const history = useSevenStore.getState().chatHistory;
@@ -830,7 +890,9 @@ ${notes}`;
     store.addTerminalLog(`USER PROMPT: "${userPrompt || (image ? '[Image Analysis]' : '')}"`, 'cmd');
 
     try {
-      // No API key: local keyword fallback, no streaming available.
+      // No Gemini key: try OpenRouter (if the user configured one) before
+      // falling all the way back to the keyword engine. No streaming on
+      // this path — it is a safety net, not a second Director pipeline.
       if (!config.geminiApiKey || config.geminiApiKey.trim().length <= 5) {
         if (image) {
           const res = {
@@ -844,11 +906,20 @@ ${notes}`;
           await this.replayAsChunks(res.text, onToken);
           return res;
         }
+        if (openRouterService.isConfigured(config.openRouterKey)) {
+          try {
+            const res = await this.chatWithOpenRouter(userPrompt);
+            await this.replayAsChunks(res.text, onToken);
+            return res;
+          } catch (e: any) {
+            store.addTerminalLog(`OpenRouter fallback failed (${e?.message || e}); using local engine.`, 'warn');
+          }
+        }
         const res = await this.chatLocalFallback(userPrompt);
         return res;
       }
 
-      const model = this.getModel(config.geminiApiKey);
+      const model = await this.getModel(config.geminiApiKey);
 
       // Multi-turn context for pass 1
       const history = useSevenStore.getState().chatHistory;
@@ -1167,7 +1238,10 @@ ${notes}`;
     // Web search fallback
     if (lower.startsWith('search ') || lower.startsWith('cherche ') || lower.includes('search web') || lower.includes('recherche sur le web')) {
       const query = userPrompt.replace(/^(search|cherche|search web|recherche sur le web)\s*(for|sur|about|:)?\s*/i, '').trim();
-      const res = await webSearchService.searchWeb(query || 'AI developments');
+      const res = await webSearchService.searchWeb(
+        query || 'AI developments',
+        (config.language || 'en') === 'fr' ? 'fr' : 'en'
+      );
       return {
         text: res.summary,
         toolCall: {
@@ -1280,6 +1354,13 @@ ${notes}`;
           return res;
         } catch (e) {
           return await this.degradeToLocal(userPrompt, e);
+        }
+      }
+      if (openRouterService.isConfigured(config.openRouterKey)) {
+        try {
+          return await this.chatWithOpenRouter(userPrompt);
+        } catch (e: any) {
+          store.addTerminalLog(`OpenRouter fallback failed (${e?.message || e}); using local engine.`, 'warn');
         }
       }
       const res = await this.chatLocalFallback(userPrompt);
