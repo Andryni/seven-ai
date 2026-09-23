@@ -193,7 +193,10 @@ describe('widgetTaskHandler', () => {
       renderWidget,
     } as any);
     expect(calendarService.getTodayEvents).toHaveBeenCalledTimes(1);
-    const expectedTime = farFuture.toLocaleTimeString([], { hour: '2-digit', minute: '2-digit' });
+    // The widget formats the clock time in the configured UI language (en
+    // here), not the device locale — see src/core/datetime.ts. 14:30 local
+    // renders as "02:30 PM" in en-US.
+    const expectedTime = farFuture.toLocaleTimeString('en-US', { hour: '2-digit', minute: '2-digit' });
     expect(renderWidget.mock.calls[0][0].props.nextEventLine).toBe(`${expectedTime} • Team sync`);
   });
 

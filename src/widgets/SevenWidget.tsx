@@ -23,6 +23,25 @@ import { FlexWidget, TextWidget } from 'react-native-android-widget';
  * injecting hook calls into a function that must stay hook-free.
  */
 
+/** Localized action labels. The widget renders inside Android's RemoteViews
+ *  host, not the app's React tree, so it cannot pull the i18n dictionary or
+ *  theme context — the language rides in as a prop instead. Mirrors the
+ *  localized quick actions (quickActionsService). */
+const ACTION_LABELS: Record<'fr' | 'en', { organize: string; briefing: string; research: string; build: string }> = {
+  fr: {
+    organize: 'Organiser les fichiers',
+    briefing: 'Briefing du matin',
+    research: 'Recherche → PDF',
+    build: 'Créer un site',
+  },
+  en: {
+    organize: 'Organize files',
+    briefing: 'Morning briefing',
+    research: 'Research → PDF',
+    build: 'Build a website',
+  },
+};
+
 export interface SevenWidgetProps {
   /** Assistant display name, from AssistantConfig.assistantName. */
   assistantName: string;
@@ -39,6 +58,8 @@ export interface SevenWidgetProps {
    *  (or an honest "unavailable"/"no events" line). Optional, same reason
    *  as `weatherLine`. */
   nextEventLine?: string;
+  /** UI language for the action labels (defaults to 'en'). */
+  language?: 'fr' | 'en';
 }
 
 
@@ -126,7 +147,9 @@ export function SevenWidget({
   accentColor,
   weatherLine,
   nextEventLine,
+  language = 'en',
 }: SevenWidgetProps) {
+  const labels = ACTION_LABELS[language];
   return (
     <FlexWidget
       clickAction="OPEN_APP"
@@ -181,10 +204,10 @@ export function SevenWidget({
         </FlexWidget>
       )}
 
-      <ActionRow label="Organize downloads" deepLink="seven://organizer" accentColor={accentColor} />
-      <ActionRow label="Morning briefing" deepLink="seven://?briefing=1" accentColor={accentColor} />
-      <ActionRow label="Research → PDF" deepLink="seven://research" accentColor={accentColor} />
-      <ActionRow label="Build a website" deepLink="seven://dave" accentColor={accentColor} />
+      <ActionRow label={labels.organize} deepLink="seven://organizer" accentColor={accentColor} />
+      <ActionRow label={labels.briefing} deepLink="seven://?briefing=1" accentColor={accentColor} />
+      <ActionRow label={labels.research} deepLink="seven://research" accentColor={accentColor} />
+      <ActionRow label={labels.build} deepLink="seven://dave" accentColor={accentColor} />
     </FlexWidget>
   );
 }

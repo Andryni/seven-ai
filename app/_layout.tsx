@@ -9,6 +9,7 @@ import { useFonts } from 'expo-font';
 import { SafeAreaProvider, useSafeAreaInsets } from 'react-native-safe-area-context';
 import { ShareIntentProvider } from 'expo-share-intent';
 import { useSevenStore } from '../src/store/useSevenStore';
+import { useWidgetRefresh } from '../src/hooks/useWidgetRefresh';
 import { fileOrganizer } from '../src/services/fileOrganizer';
 import { routineService } from '../src/services/routineService';
 import { ThemeProvider, PALETTES } from '../src/theme/theme';
@@ -153,6 +154,9 @@ const RootFrame: React.FC<{ palette: Palette }> = ({ palette }) => {
   const { locked, unlock } = useAppLock();
   const language = useSevenStore((s) => s.config.language ?? 'en');
   useConditionalRoutines();
+  // Push a fresh glance row to the home-screen widget on every foreground —
+  // Android's own 30-minute widget timer alone leaves weather/agenda stale.
+  useWidgetRefresh();
 
   return (
     <View style={[styles.container, { backgroundColor: palette.bg }]}>

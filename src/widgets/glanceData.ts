@@ -1,5 +1,6 @@
 import type { LiveWeather } from '../services/liveInfoService';
 import type { CalendarEventSummary } from '../services/calendarService';
+import { formatClockTime } from '../core/datetime';
 
 /**
  * Pure formatting for the home-screen widget's two "glance" lines (weather +
@@ -42,7 +43,7 @@ export function formatNextEventGlance(
     ? language === 'fr'
       ? 'Toute la journée'
       : 'All day'
-    : upcoming.startDate.toLocaleTimeString([], { hour: '2-digit', minute: '2-digit' });
+    : formatClockTime(upcoming.startDate, language);
   return `${time} • ${upcoming.title}`;
 }
 
