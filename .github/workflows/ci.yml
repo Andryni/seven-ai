@@ -1,0 +1,43 @@
+name: CI
+
+# Runs the same three checks a contributor is expected to pass locally
+# before merging: typecheck, lint, tests. The project had no automated
+# guard rail before this — a regression could land silently on `main`
+# and only surface the next time someone happened to run `tsc`/`eslint`/
+# `jest` by hand.
+on:
+  push:
+    branches: [main]
+  pull_request:
+    branches: [main]
+  workflow_dispatch: {}
+
+concurrency:
+  group: ci-${{ github.workflow }}-${{ github.ref }}
+  cancel-in-progress: true
+
+jobs:
+  quality:
+    name: Typecheck, lint & test
+    runs-on: ubuntu-latest
+    steps:
+      - name: Checkout
+        uses: actions/checkout@v4
+
+      - name: Setup Node.js
+        uses: actions/setup-node@v4
+        with:
+          node-version: '22'
+          cache: 'npm'
+
+      - name: Install dependencies
+        run: npm ci
+
+      - name: Typecheck (tsc --noEmit)
+        run: npm run typecheck
+
+      - name: Lint (eslint)
+        run: npm run lint
+
+      - name: Test (jest)
+        run: npm test -- --ci

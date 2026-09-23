@@ -1,5 +1,7 @@
 # SEVEN (Seven AI)
 
+[![CI](https://github.com/Andryni/seven-ai/actions/workflows/ci.yml/badge.svg)](https://github.com/Andryni/seven-ai/actions/workflows/ci.yml)
+
 > JARVIS-like personal AI assistant for Android built with React Native, **Expo SDK 57**, Expo Router and TypeScript.
 
 ## ⚠️ Honesty matrix — real vs. simulated
