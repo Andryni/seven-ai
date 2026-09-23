@@ -13,6 +13,8 @@ import Svg, {
 } from 'react-native-svg';
 import { AssistantStatus } from '../types';
 import { useTheme } from '../theme/theme';
+import { computeGideonHue } from './gideonHue';
+import { HEAD_PATH, NECK_PATH, BUST_PATH, COLUMN_PATH, SCAN_LINES, LANDMARKS } from './gideonGeometry';
 import { VISEME_SHAPES, VisemeId, textToVisemes } from '../core/visemes';
 import {
   AUTO_SMILE_MS,
@@ -79,37 +81,10 @@ export const GideonAvatar: React.FC<GideonAvatarProps> = ({
   // and the fading silhouette come from the theme's own background family and
   // only the emission carries the status colour. Saturated shadow tones made
   // the head read as a sticker pasted over the scene instead of lit in it.
-  const hue = useMemo(() => {
-    // Mid-dark: dark enough to sit in the background, tinted enough to model
-    // the face (a pure background tone flattens every shadow).
-    const deep = palette.isDark ? '#0E2836' : '#CFE2ED';
-    const edge = palette.isDark ? palette.bg : '#E9F3F8';
-    switch (status) {
-      case 'thinking':
-        return { core: '#F0D5FF', glow: '#BD00FF', deep, edge, iris: '#7A2AB8', lip: '#8C3FC4', speed: 2.0 };
-      case 'speaking':
-        return { core: '#D9FAFF', glow: '#22D3EE', deep, edge, iris: '#0A7B92', lip: '#1E9FC2', speed: 1.7 };
-      case 'listening':
-        return { core: '#CFFFE9', glow: '#00FFA3', deep, edge, iris: '#0F8A63', lip: '#16A87C', speed: 1.4 };
-      case 'organizing':
-        return { core: '#CFFFE9', glow: '#00FFA3', deep, edge, iris: '#0F8A63', lip: '#16A87C', speed: 1.5 };
-      case 'building':
-        return { core: '#D6F1FF', glow: '#00B4FF', deep, edge, iris: '#0A6A9E', lip: '#1D8FC4', speed: 1.8 };
-      case 'healing':
-        return { core: '#FFD3DE', glow: '#FF3366', deep, edge, iris: '#A6123C', lip: '#C0395C', speed: 2.4 };
-      case 'idle':
-      default:
-        return {
-          core: '#E8FCFF',
-          glow: themeColor || palette.orbInner || '#00E5FF',
-          deep,
-          edge,
-          iris: '#0C6E86',
-          lip: '#1E9FC2',
-          speed: 1.0,
-        };
-    }
-  }, [status, themeColor, palette]);
+  const hue = useMemo(
+    () => computeGideonHue(status, themeColor, palette),
+    [status, themeColor, palette]
+  );
 
   // ------------------------------------------------------------- Animated set
   const boot = useMemo(() => new Animated.Value(0), []);
@@ -618,35 +593,12 @@ export const GideonAvatar: React.FC<GideonAvatarProps> = ({
   // (chat header chip) fall back to the silhouette + face only.
   const detailed = size >= 64;
 
-  const headPath =
-    'M 100 22 C 84 22 70 29 63 42 C 58 51 56 60 56 70 C 56 79 55 87 55 94 ' +
-    'C 55 102 57 110 61 118 C 65 126 71 133 79 139 C 85 144 92 149 100 149 ' +
-    'C 108 149 115 144 121 139 C 129 133 135 126 139 118 C 143 110 145 102 145 94 ' +
-    'C 145 87 144 79 144 70 C 144 60 142 51 137 42 C 130 29 116 22 100 22 Z';
-  const neckPath = 'M 82 138 C 82 150 80 158 76 167 L 124 167 C 120 158 118 150 118 138 Z';
-  const bustPath = 'M 30 200 C 30 180 60 167 100 167 C 140 167 170 180 170 200 Z';
-  const columnPath = 'M 88 152 L 112 152 L 146 200 L 54 200 Z';
-  const scanLines = Array.from({ length: 15 }, (_, i) => 30 + i * 8);
-  const landmarks: [number, number][] = [
-    [100, 22],
-    [100, 44],
-    [81.6, 86],
-    [118.4, 86],
-    [100, 107],
-    [93.5, 114.5],
-    [106.5, 114.5],
-    [100, 132],
-    [86, 132],
-    [114, 132],
-    [100, 150],
-    [55, 94],
-    [145, 94],
-    [44, 92],
-    [156, 92],
-    [62, 118],
-    [138, 118],
-    [100, 168],
-  ];
+  const headPath = HEAD_PATH;
+  const neckPath = NECK_PATH;
+  const bustPath = BUST_PATH;
+  const columnPath = COLUMN_PATH;
+  const scanLines = SCAN_LINES;
+  const landmarks = LANDMARKS;
 
   // Face overlay geometry (eyes).
   const eyeW = px(18.8);
