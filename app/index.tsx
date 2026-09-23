@@ -1,7 +1,7 @@
 import React, { useState, useEffect, useMemo, useRef, useCallback } from 'react';
 import { FONT } from '../src/theme/typography';
 import { View, Text, ScrollView } from 'react-native';
-import { useRouter } from 'expo-router';
+import { useRouter, useLocalSearchParams } from 'expo-router';
 import NetInfo from '@react-native-community/netinfo';
 import { useQuickActionCallback } from 'expo-quick-actions/hooks';
 import { useSevenStore } from '../src/store/useSevenStore';
@@ -126,6 +126,7 @@ const GREETING_COPY: Record<'fr' | 'en', GreetingPool> = {
 
 export default function DashboardScreen() {
   const router = useRouter();
+  const params = useLocalSearchParams<{ briefing?: string }>();
   const config = useSevenStore((s) => s.config);
   const setConfig = useSevenStore((s) => s.setConfig);
   const status = useSevenStore((s) => s.status);
@@ -243,6 +244,23 @@ export default function DashboardScreen() {
   useEffect(() => {
     quickActionsService.registerDefaultActions(language);
   }, [language]);
+
+  // "Morning briefing" from the home-screen widget arrives as a deep link
+  // (seven://?briefing=1) since OPEN_URI cannot target a screen without a
+  // route of its own — organizer/research/dave already have one. Adjusted
+  // during render (React's documented pattern for deriving state from a
+  // changing prop) rather than in an effect, so opening the modal cannot
+  // trigger a cascading extra render.
+  const [handledBriefingParam, setHandledBriefingParam] = useState<string | undefined>(undefined);
+  if (params.briefing === '1' && handledBriefingParam !== params.briefing) {
+    setHandledBriefingParam(params.briefing);
+    setShowBriefingModal(true);
+  }
+  useEffect(() => {
+    if (params.briefing === '1') {
+      router.setParams({ briefing: undefined });
+    }
+  }, [params.briefing, router]);
 
   useQuickActionCallback(
     useCallback(

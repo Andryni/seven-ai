@@ -81,7 +81,26 @@
           "microphonePermission": "Allow SEVEN to use the microphone for voice commands and the \"Hey Seven\" wake word."
         }
       ],
-      "expo-quick-actions"
+      "expo-quick-actions",
+      [
+        "react-native-android-widget",
+        {
+          "widgets": [
+            {
+              "name": "SevenStatus",
+              "label": "SEVEN AI",
+              "description": "Assistant status and one-tap shortcuts: organize downloads, morning briefing, research to PDF, build a website.",
+              "minWidth": "250dp",
+              "minHeight": "110dp",
+              "targetCellWidth": 4,
+              "targetCellHeight": 2,
+              "resizeMode": "horizontal|vertical",
+              "previewImage": "./assets/widget-preview/status-card.png",
+              "updatePeriodMillis": 1800000
+            }
+          ]
+        }
+      ]
     ],
     "extra": {
       "eas": {
