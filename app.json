@@ -28,7 +28,8 @@
         "NSSpeechRecognitionUsageDescription": "Allow SEVEN to securely recognize your speech for hands-free commands.",
         "NSMicrophoneUsageDescription": "Allow SEVEN to use the microphone for voice commands and the \"Hey Seven\" wake word.",
         "NSContactsUsageDescription": "Allow SEVEN to read your contacts so you can call or message someone by name.",
-        "NSCalendarsFullAccessUsageDescription": "Allow SEVEN to read and create events on your calendar for briefings and scheduling."
+        "NSCalendarsFullAccessUsageDescription": "Allow SEVEN to read and create events on your calendar for briefings and scheduling.",
+        "NSFaceIDUsageDescription": "Allow SEVEN to use Face ID to lock and unlock the app."
       }
     },
     "android": {
@@ -99,6 +100,7 @@
           "calendarPermission": "Allow SEVEN to read and create events on your calendar for briefings and scheduling."
         }
       ],
+      "expo-local-authentication",
       [
         "expo-share-intent",
         {

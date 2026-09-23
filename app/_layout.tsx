@@ -16,6 +16,8 @@ import type { Palette } from '../src/theme/theme';
 import { installWebFonts, NATIVE_FONT_MAP } from '../src/theme/typography';
 import { SandboxExecutorHost } from '../src/components/SandboxExecutorHost';
 import { LaunchSplash } from '../src/components/LaunchSplash';
+import { AppLockScreen } from '../src/components/AppLockScreen';
+import { useAppLock } from '../src/hooks/useAppLock';
 
 const PUBLIC_ROUTES = ['/onboarding'];
 
@@ -124,6 +126,8 @@ export default function RootLayout() {
 const RootFrame: React.FC<{ palette: Palette }> = ({ palette }) => {
   const insets = useSafeAreaInsets();
   const [showSplash, setShowSplash] = useState(true);
+  const { locked, unlock } = useAppLock();
+  const language = useSevenStore((s) => s.config.language ?? 'en');
 
   return (
     <View style={[styles.container, { backgroundColor: palette.bg }]}>
@@ -153,6 +157,10 @@ const RootFrame: React.FC<{ palette: Palette }> = ({ palette }) => {
 
       {/* Animated boot sequence shown on every cold launch. */}
       {showSplash && <LaunchSplash onFinish={() => setShowSplash(false)} />}
+
+      {/* Biometric lock, on top of the splash too: a cold launch with app
+          lock enabled should never flash the dashboard before locking. */}
+      {locked && <AppLockScreen onUnlock={unlock} language={language} />}
     </View>
   );
 };

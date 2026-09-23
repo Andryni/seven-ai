@@ -63,6 +63,10 @@ export interface AssistantConfig {
       blinks/expressions/lip-sync) is never affected — only ambient loops
       that exist purely for atmosphere are. */
   reduceMotion?: 'auto' | 'on' | 'off';
+  /** Gate the whole app behind Face ID / fingerprint / device passcode.
+      Only ever turned on if the device actually has biometrics/passcode
+      enrolled (checked live in Settings before the switch can flip). */
+  appLockEnabled?: boolean;
   isConfigured: boolean;
 }
 

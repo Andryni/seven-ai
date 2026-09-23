@@ -1,4 +1,4 @@
-import React, { useMemo, useState } from 'react';
+import React, { useEffect, useMemo, useState } from 'react';
 import { FONT } from '../src/theme/typography';
 import {
   View,
@@ -31,6 +31,7 @@ import { useTheme, useThemeStyles } from '../src/theme/theme';
 import type { Palette, ThemeName, UiMode } from '../src/theme/theme';
 import { t } from '../src/theme/i18n';
 import { haptics } from '../src/services/hapticsService';
+import { appLockService } from '../src/services/appLockService';
 import {
   Settings,
   ChevronLeft,
@@ -121,6 +122,20 @@ export default function SettingsScreen() {
   const [showSelfHealingModal, setShowSelfHealingModal] = useState(false);
   const [savedSuccess, setSavedSuccess] = useState(false);
   const [isTestingVoice, setIsTestingVoice] = useState(false);
+
+  // App lock: the switch only ever turns on if the device actually has
+  // biometrics/passcode enrolled, checked live (never trusted from a stale
+  // cached value — someone could have removed their fingerprint since).
+  const [appLockAvailable, setAppLockAvailable] = useState<boolean | null>(null);
+  const [appLockMethod, setAppLockMethod] = useState('');
+  useEffect(() => {
+    let mounted = true;
+    appLockService.isAvailable().then((v) => mounted && setAppLockAvailable(v));
+    appLockService.describeMethod(lang).then((v) => mounted && setAppLockMethod(v));
+    return () => {
+      mounted = false;
+    };
+  }, [lang]);
 
   // ---- OTA update channel (EAS Updates) ----
   // `expo-updates` exports the launched update's facts synchronously; on web it
@@ -522,6 +537,28 @@ export default function SettingsScreen() {
             </View>
             <Text style={styles.avatarEngineHint}>{t('settings.reduceMotionHint', lang)}</Text>
           </View>
+
+          {/* App lock — biometric/passcode gate on the whole app. The switch
+              is disabled (never silently ignored) when the device has
+              nothing enrolled, so the user always understands why. */}
+          <View style={[styles.appearanceRow, styles.appearanceRowSpaced]}>
+            <Text style={styles.inputLabel}>{t('settings.appLock', lang).toUpperCase()}</Text>
+            <Switch
+              value={!!config.appLockEnabled && !!appLockAvailable}
+              disabled={!appLockAvailable}
+              onValueChange={(val) => {
+                haptics.light();
+                setConfig({ appLockEnabled: val });
+              }}
+              trackColor={{ false: palette.bgElevated, true: palette.accent }}
+              thumbColor="#FFF"
+            />
+          </View>
+          <Text style={styles.avatarEngineHint}>
+            {appLockAvailable === false
+              ? t('settings.appLockUnavailable', lang)
+              : t('settings.appLockHint', lang).replace('{method}', appLockMethod)}
+          </Text>
         </View>
 
         {/* Section 1: Connectors & Integrations */}

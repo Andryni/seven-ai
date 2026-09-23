@@ -114,6 +114,7 @@ const defaultConfig: AssistantConfig = {
   gyroEnabled: true,
   showIconLabels: false,
   reduceMotion: 'auto',
+  appLockEnabled: false,
   isConfigured: false,
 };
 
