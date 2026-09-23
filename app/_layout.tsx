@@ -177,6 +177,8 @@ const RootFrame: React.FC<{ palette: Palette }> = ({ palette }) => {
           <Stack.Screen name="dave" />
           <Stack.Screen name="research" />
           <Stack.Screen name="routines" />
+          <Stack.Screen name="memory" />
+          <Stack.Screen name="standby" />
           <Stack.Screen name="settings" />
         </Stack>
       </View>
