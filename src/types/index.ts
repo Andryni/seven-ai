@@ -46,8 +46,10 @@ export interface AssistantConfig {
   /** Gideon (holographic head) is the default engine; the others are legacy. */
   avatarStyle?: 'gideon' | 'vector' | 'shader';
   /** Dashboard module deck: position per widget id, as fractions (0–1) of the
-      canvas travel range, so an arranged layout survives resize and rotation. */
-  widgetLayout?: Record<string, { x: number; y: number }>;
+      canvas travel range, so an arranged layout survives resize and rotation.
+      `size` (S/M/L, how many of the 3 grid columns the tile spans) is
+      optional so decks saved before resizing existed keep rendering at 'S'. */
+  widgetLayout?: Record<string, { x: number; y: number; size?: 'S' | 'M' | 'L' }>;
   /** Module ids the user removed from the dashboard deck. */
   widgetHidden?: string[];
   wakeWordEnabled?: boolean;

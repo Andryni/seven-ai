@@ -15,6 +15,7 @@ import {
   WidgetCanvas,
   defaultWidgetLayout,
   type WidgetSpec,
+  type WidgetSize,
 } from '../src/components/WidgetCanvas';
 import { SelfHealingModal } from '../src/components/SelfHealingModal';
 import { MorningBriefingModal } from '../src/components/MorningBriefingModal';
@@ -431,9 +432,20 @@ export default function DashboardScreen() {
 
   const moveWidget = useCallback(
     (id: string, position: { x: number; y: number }) => {
-      setConfig({ widgetLayout: { ...(config.widgetLayout ?? {}), [id]: position } });
+      const existing = config.widgetLayout?.[id];
+      setConfig({
+        widgetLayout: { ...(config.widgetLayout ?? {}), [id]: { ...position, size: existing?.size } },
+      });
     },
     [config.widgetLayout, setConfig]
+  );
+
+  const resizeWidget = useCallback(
+    (id: string, size: WidgetSize) => {
+      const current = deckLayout[id] ?? { x: 0, y: 0 };
+      setConfig({ widgetLayout: { ...(config.widgetLayout ?? {}), [id]: { ...current, size } } });
+    },
+    [config.widgetLayout, deckLayout, setConfig]
   );
 
   const toggleWidgetHidden = useCallback(
@@ -795,6 +807,7 @@ export default function DashboardScreen() {
             layout={deckLayout}
             onMove={moveWidget}
             onHide={toggleWidgetHidden}
+            onResize={resizeWidget}
             editing={arranging}
             palette={palette}
           />

@@ -17,11 +17,30 @@ export interface WidgetSpec {
 }
 
 /**
+ * S/M/L, like a home-screen widget: how many of the deck's 3 columns a tile
+ * spans. Height stays a single row for every size — widening (not growing
+ * downward) keeps the free drag-anywhere canvas simple, since every tile's
+ * own travel range only ever depends on its own width.
+ */
+export type WidgetSize = 'S' | 'M' | 'L';
+
+const SIZE_ORDER: WidgetSize[] = ['S', 'M', 'L'];
+const SIZE_COLUMN_SPAN: Record<WidgetSize, number> = { S: 1, M: 2, L: 3 };
+
+/** S -> M -> L -> S, the cycle the resize control steps through on each tap. */
+export const nextWidgetSize = (size: WidgetSize): WidgetSize =>
+  SIZE_ORDER[(SIZE_ORDER.indexOf(size) + 1) % SIZE_ORDER.length];
+
+const SIZE_LABEL: Record<WidgetSize, string> = { S: 'S', M: 'M', L: 'L' };
+
+/**
  * Positions are stored as fractions of the canvas travel range (0–1 on each
  * axis, where 1 means "flush against the far edge"). Fractions survive a
  * rotation, a resize and the web/desktop width differences; pixels would not.
+ * `size` is optional so decks saved before resizing existed keep rendering
+ * every tile at its original 'S' footprint.
  */
-export type WidgetLayout = Record<string, { x: number; y: number }>;
+export type WidgetLayout = Record<string, { x: number; y: number; size?: WidgetSize }>;
 
 const TILE_HEIGHT = 76;
 const GAP = 8;
@@ -53,10 +72,21 @@ export const defaultWidgetLayout = (ids: string[]): WidgetLayout => {
   return layout;
 };
 
+/** Pixel width for a given size at the current canvas width. Zero before the
+    canvas has actually measured its width (matches the pre-resize behavior,
+    where the deck simply doesn't render any tile yet). */
+export const widthForSize = (size: WidgetSize | undefined, canvasWidth: number): number => {
+  if (canvasWidth <= 0) return 0;
+  const span = SIZE_COLUMN_SPAN[size ?? 'S'];
+  const baseTile = (canvasWidth - GAP * (COLUMNS - 1)) / COLUMNS;
+  return baseTile * span + GAP * (span - 1);
+};
+
 interface CanvasWidgetProps {
   spec: WidgetSpec;
   index: number;
   position: { x: number; y: number };
+  size?: WidgetSize;
   width: number;
   height: number;
   canvasWidth: number;
@@ -64,6 +94,7 @@ interface CanvasWidgetProps {
   palette: Palette;
   onMove: (id: string, position: { x: number; y: number }) => void;
   onHide?: (id: string) => void;
+  onResize?: (id: string, size: WidgetSize) => void;
 }
 
 /** Exported for reduce-motion testing; not part of the public widget API. */
@@ -71,6 +102,7 @@ export const CanvasWidget: React.FC<CanvasWidgetProps> = ({
   spec,
   index,
   position,
+  size = 'S',
   width,
   height,
   canvasWidth,
@@ -78,6 +110,7 @@ export const CanvasWidget: React.FC<CanvasWidgetProps> = ({
   palette,
   onMove,
   onHide,
+  onResize,
 }) => {
   const pos = useMemo(() => new Animated.ValueXY({ x: 0, y: 0 }), []);
   const entry = useMemo(() => new Animated.Value(0), []);
@@ -261,7 +294,26 @@ export const CanvasWidget: React.FC<CanvasWidgetProps> = ({
             <EyeOff size={9} color={palette.error} />
           </View>
         </TouchableOpacity>
-      ) : (
+      ) : null}
+      {editing && onResize && (
+        // A sibling absolutely-positioned control, not nested inside the
+        // hide-toggling TouchableOpacity above: React Native routes a touch
+        // to the single view that actually contains the tap point, so this
+        // never also fires the "hide" press underneath it.
+        <TouchableOpacity
+          style={[styles.resizeBadge, { borderColor: palette.accent, backgroundColor: palette.bgDeep }]}
+          activeOpacity={0.7}
+          accessibilityLabel={`Resize ${spec.title} widget (currently ${SIZE_LABEL[size]})`}
+          accessibilityRole="button"
+          onPress={() => {
+            haptics.light();
+            onResize(spec.id, nextWidgetSize(size));
+          }}
+        >
+          <Text style={[styles.resizeBadgeText, { color: palette.accent }]}>{SIZE_LABEL[size]}</Text>
+        </TouchableOpacity>
+      )}
+      {!editing && (
         <TouchableOpacity
           style={cardStyle}
           activeOpacity={0.85}
@@ -281,6 +333,8 @@ interface WidgetCanvasProps {
   onMove: (id: string, position: { x: number; y: number }) => void;
   /** Called when a tile is tapped in ARRANGE mode, to remove it from the deck. */
   onHide?: (id: string) => void;
+  /** Called when the resize badge is tapped in ARRANGE mode, cycling S -> M -> L. */
+  onResize?: (id: string, size: WidgetSize) => void;
   editing: boolean;
   palette: Palette;
 }
@@ -298,12 +352,11 @@ export const WidgetCanvas: React.FC<WidgetCanvasProps> = ({
   layout,
   onMove,
   onHide,
+  onResize,
   editing,
   palette,
 }) => {
   const [canvasWidth, setCanvasWidth] = useState(0);
-
-  const tileWidth = canvasWidth > 0 ? (canvasWidth - GAP * (COLUMNS - 1)) / COLUMNS : 0;
 
   return (
     <View
@@ -311,21 +364,26 @@ export const WidgetCanvas: React.FC<WidgetCanvasProps> = ({
       onLayout={(e) => setCanvasWidth(e.nativeEvent.layout.width)}
     >
       {canvasWidth > 0 &&
-        widgets.map((spec, index) => (
-          <CanvasWidget
-            key={spec.id}
-            spec={spec}
-            index={index}
-            position={layout[spec.id] ?? { x: 0, y: 0 }}
-            width={tileWidth}
-            height={TILE_HEIGHT}
-            canvasWidth={canvasWidth}
-            editing={editing}
-            palette={palette}
-            onMove={onMove}
-            onHide={onHide}
-          />
-        ))}
+        widgets.map((spec, index) => {
+          const position = layout[spec.id] ?? { x: 0, y: 0 };
+          return (
+            <CanvasWidget
+              key={spec.id}
+              spec={spec}
+              index={index}
+              position={position}
+              size={position.size}
+              width={widthForSize(position.size, canvasWidth)}
+              height={TILE_HEIGHT}
+              canvasWidth={canvasWidth}
+              editing={editing}
+              palette={palette}
+              onMove={onMove}
+              onHide={onHide}
+              onResize={onResize}
+            />
+          );
+        })}
       {editing && (
         <View style={[styles.gridHint, { borderColor: palette.accentSoft }]} pointerEvents="none" />
       )}
@@ -396,6 +454,22 @@ const styles = StyleSheet.create({
     position: 'absolute',
     bottom: 3,
     right: 3,
+  },
+  resizeBadge: {
+    position: 'absolute',
+    bottom: 3,
+    left: 3,
+    width: 18,
+    height: 18,
+    borderRadius: 4,
+    borderWidth: 1,
+    alignItems: 'center',
+    justifyContent: 'center',
+  },
+  resizeBadgeText: {
+    fontFamily: FONT.uiMedium,
+    fontSize: 9,
+    fontWeight: '800',
   },
   gridHint: {
     position: 'absolute',
