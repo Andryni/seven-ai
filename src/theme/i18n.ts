@@ -79,6 +79,8 @@ const en: Dict = {
   'settings.theme.matrix': 'MATRIX',
   'settings.mode.dark': 'DARK',
   'settings.mode.light': 'LIGHT',
+  'settings.mode.auto': 'AUTO',
+  'settings.mode.autoHint': 'Follows your phone\u2019s system appearance, and switches live if it changes.',
   'settings.reduceMotion': 'REDUCE MOTION',
   'settings.reduceMotionHint':
     'Turns off ambient effects — background dust, Gideon\u2019s idle sway/halo/hologram sweep, the dashboard drag wobble — without touching blinking, speech or loading feedback.',
@@ -293,6 +295,9 @@ const fr: Dict = {
   'settings.theme.matrix': 'MATRIX',
   'settings.mode.dark': 'SOMBRE',
   'settings.mode.light': 'CLAIR',
+  'settings.mode.auto': 'AUTO',
+  'settings.mode.autoHint':
+    "Suit l'apparence système du téléphone, et change en direct si elle change.",
   'settings.reduceMotion': 'RÉDUIRE LES ANIMATIONS',
   'settings.reduceMotionHint':
     "Désactive les effets d'ambiance — poussière en fond, balancement/halo/balayage holographique de Gideon, tremblement du tableau de bord — sans toucher aux clignements, à la parole ou aux indicateurs de chargement.",

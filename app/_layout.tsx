@@ -13,6 +13,7 @@ import { fileOrganizer } from '../src/services/fileOrganizer';
 import { routineService } from '../src/services/routineService';
 import { ThemeProvider, PALETTES } from '../src/theme/theme';
 import type { Palette } from '../src/theme/theme';
+import { useResolvedUiMode } from '../src/hooks/useResolvedUiMode';
 import { installWebFonts, NATIVE_FONT_MAP } from '../src/theme/typography';
 import { SandboxExecutorHost } from '../src/components/SandboxExecutorHost';
 import { LaunchSplash } from '../src/components/LaunchSplash';
@@ -32,7 +33,11 @@ export default function RootLayout() {
   const isInitialized = useSevenStore((s) => s.isInitialized);
   const isConfigured = useSevenStore((s) => s.config.isConfigured);
   const themeName = useSevenStore((s) => s.config.theme ?? 'seven');
-  const uiMode = useSevenStore((s) => s.config.uiMode ?? 'dark');
+  // Resolves 'auto' against the live OS appearance setting; 'dark'/'light'
+  // pin it. Kept out of the store itself so the app never has to persist
+  // "what dark/light currently means" — only the user's actual preference.
+  const configuredUiMode = useSevenStore((s) => s.config.uiMode ?? 'dark');
+  const uiMode = useResolvedUiMode(configuredUiMode);
 
   useEffect(() => {
     // Web gets the display/ui/mono families from Google Fonts; native maps each

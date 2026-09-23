@@ -19,8 +19,9 @@ export interface AssistantConfig {
   themeColor: string;
   /** Accent palette: gold/cyan (SEVEN), crimson or matrix. */
   theme?: 'seven' | 'ultron' | 'crimson' | 'matrix';
-  /** Light / dark HUD mode. */
-  uiMode?: 'dark' | 'light';
+  /** Light / dark HUD mode. 'auto' follows the OS appearance setting live
+      (see useResolvedUiMode); 'dark'/'light' pin it regardless of the OS. */
+  uiMode?: 'dark' | 'light' | 'auto';
   /** UI language. */
   language?: 'fr' | 'en';
   /** Long-term memory notes injected into every agent request. */

@@ -75,6 +75,8 @@ const ACCENT_THEMES: { id: ThemeName; dot: string }[] = [
   { id: 'matrix', dot: '#4ADE80' },
 ];
 
+type UiModeSetting = UiMode | 'auto';
+
 export default function SettingsScreen() {
   const router = useRouter();
   const config = useSevenStore((s) => s.config);
@@ -197,7 +199,7 @@ export default function SettingsScreen() {
     setConfig({ theme });
   };
 
-  const applyUiMode = (mode: UiMode) => {
+  const applyUiMode = (mode: UiModeSetting) => {
     haptics.light();
     setConfig({ uiMode: mode });
   };
@@ -394,7 +396,7 @@ export default function SettingsScreen() {
           <View style={[styles.appearanceRow, styles.appearanceRowSpaced]}>
             <Text style={styles.inputLabel}>{t('settings.uiMode', lang).toUpperCase()}</Text>
             <View style={styles.chipRow}>
-              {(['dark', 'light'] as UiMode[]).map((mode) => (
+              {(['auto', 'dark', 'light'] as UiModeSetting[]).map((mode) => (
                 <TouchableOpacity
                   key={mode}
                   style={[
@@ -402,6 +404,8 @@ export default function SettingsScreen() {
                     (config.uiMode ?? 'dark') === mode && styles.langChipActive,
                   ]}
                   accessibilityLabel={t(`settings.mode.${mode}`, lang)}
+                  accessibilityRole="button"
+                  accessibilityState={{ selected: (config.uiMode ?? 'dark') === mode }}
                   onPress={() => applyUiMode(mode)}
                 >
                   <Text
@@ -415,6 +419,9 @@ export default function SettingsScreen() {
                 </TouchableOpacity>
               ))}
             </View>
+            {(config.uiMode ?? 'dark') === 'auto' && (
+              <Text style={styles.avatarEngineHint}>{t('settings.mode.autoHint', lang)}</Text>
+            )}
           </View>
 
           <View style={[styles.appearanceRow, styles.appearanceRowSpaced]}>
