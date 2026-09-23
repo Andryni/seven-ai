@@ -9,5 +9,8 @@ web-build/
 
 # Build & runtime artifacts
 *.apk
+
+# On-device acceptance artifacts: downloaded APKs, uiautomator dumps, logs
+.acceptance/
 uploads/
 seven-*.png

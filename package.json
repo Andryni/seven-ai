@@ -10,6 +10,7 @@
     "test": "jest",
     "lint": "eslint .",
     "typecheck": "tsc --noEmit",
+    "accept:device": "node scripts/device-acceptance.cjs",
     "postinstall": "node scripts/patch-emc-main.cjs"
   },
   "dependencies": {
