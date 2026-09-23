@@ -18,6 +18,7 @@
     "@react-native-community/slider": "5.2.0",
     "buffer": "~6.0.3",
     "expo": "^57.0.0",
+    "expo-asset": "~57.0.18",
     "expo-audio": "~57.0.5",
     "expo-auth-session": "~57.0.12",
     "expo-battery": "~57.0.3",
@@ -69,6 +70,10 @@
     "typescript": "~5.9.3"
   },
   "private": true,
+  "overrides": {
+    "decode-uri-component": "^0.5.0",
+    "uuid": "^11.1.1"
+  },
   "expo": {
     "install": {
       "exclude": [
