@@ -53,7 +53,10 @@ import {
   Download,
 } from 'lucide-react-native';
 import * as ImagePicker from 'expo-image-picker';
+import * as FileSystem from 'expo-file-system/legacy';
+import { useShareIntentContext } from 'expo-share-intent';
 import { documentAnalysisService } from '../src/services/documentAnalysisService';
+import { shareIntentService } from '../src/services/shareIntentService';
 
 export default function ChatScreen() {
   const router = useRouter();
@@ -80,6 +83,8 @@ export default function ChatScreen() {
   // (used by the dashboard voice button). Read at mount time.
   const params = useLocalSearchParams<{ voice?: string }>();
   const [voiceModeOpen, setVoiceModeOpen] = useState(params.voice === '1');
+  const { hasShareIntent, shareIntent, resetShareIntent } = useShareIntentContext();
+  const handledShareIntentRef = useRef<string | null>(null);
   const [currentAction, setCurrentAction] = useState<string | null>(null);
   // Gideon's face reacts to outcomes: a smile when an action lands, a
   // stiffening when the turn fails. Cleared on a timer so it stays a flash.
@@ -381,6 +386,61 @@ export default function ChatScreen() {
       setCurrentAction(null);
     }
   };
+
+  /**
+   * Handles content shared into SEVEN from another app's "Share ->" menu
+   * (text, a link, an image, or a document). The chat screen is the one
+   * place this is consumed — the OS routes the share intent to whichever
+   * screen is on top, and expo-router mounts this screen fresh each time,
+   * so a ref (not state) tracks which intent instance was already
+   * processed to survive re-renders without re-firing on the same share.
+   */
+  useEffect(() => {
+    if (!hasShareIntent || !shareIntent) return;
+    // Stable-ish fingerprint of "this" share: re-running the effect (e.g. a
+    // parent re-render) must not re-send the same content twice.
+    const fingerprint = JSON.stringify({
+      text: shareIntent.text,
+      webUrl: shareIntent.webUrl,
+      files: shareIntent.files?.map((f) => f.path),
+    });
+    if (handledShareIntentRef.current === fingerprint) return;
+    handledShareIntentRef.current = fingerprint;
+
+    (async () => {
+      const classified = shareIntentService.classify(shareIntent);
+
+      if (classified.kind === 'image') {
+        try {
+          const base64 = await FileSystem.readAsStringAsync(classified.uri, {
+            encoding: FileSystem.EncodingType.Base64,
+          });
+          setSelectedImage({ uri: classified.uri, base64, mimeType: classified.mimeType });
+          if (classified.caption) setInputQuery(classified.caption);
+        } catch (e) {
+          console.warn('Error reading shared image:', e);
+        }
+      } else if (classified.kind !== 'empty') {
+        if (classified.kind === 'document') {
+          const { textSnippet, isBinary } = await shareIntentService.readDocumentText(classified);
+          const prompt = shareIntentService.buildPrompt(
+            { ...classified, textSnippet, isBinary },
+            (config.language || 'en') === 'fr' ? 'fr' : 'en'
+          );
+          handleSend(prompt);
+        } else {
+          const prompt = shareIntentService.buildPrompt(classified, (config.language || 'en') === 'fr' ? 'fr' : 'en');
+          handleSend(prompt);
+        }
+      }
+
+      resetShareIntent();
+    })();
+    // handleSend/config.language intentionally omitted: this effect must
+    // fire exactly once per distinct incoming share, keyed by the
+    // fingerprint check above, not on every identity change of those values.
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [hasShareIntent, shareIntent, resetShareIntent]);
 
   /**
    * The single place a microphone press lands, from the chat bar, from voice

@@ -6,6 +6,7 @@ import { Stack } from 'expo-router';
 import { StatusBar } from 'expo-status-bar';
 import { useFonts } from 'expo-font';
 import { SafeAreaProvider, useSafeAreaInsets } from 'react-native-safe-area-context';
+import { ShareIntentProvider } from 'expo-share-intent';
 import { useSevenStore } from '../src/store/useSevenStore';
 import { fileOrganizer } from '../src/services/fileOrganizer';
 import { ThemeProvider, PALETTES } from '../src/theme/theme';
@@ -66,11 +67,21 @@ export default function RootLayout() {
   }
 
   return (
-    <ThemeProvider themeName={themeName} uiMode={uiMode}>
-      <SafeAreaProvider>
-        <RootFrame palette={palette} />
-      </SafeAreaProvider>
-    </ThemeProvider>
+    <ShareIntentProvider
+      options={{
+        // A background share intent (the OS opening SEVEN from another
+        // app's "Share ->" menu) is meaningfully different from the user
+        // just switching apps and back — resetting on background would
+        // wipe it before the chat screen ever gets to read it.
+        resetOnBackground: false,
+      }}
+    >
+      <ThemeProvider themeName={themeName} uiMode={uiMode}>
+        <SafeAreaProvider>
+          <RootFrame palette={palette} />
+        </SafeAreaProvider>
+      </ThemeProvider>
+    </ShareIntentProvider>
   );
 }
 

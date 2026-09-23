@@ -38,6 +38,7 @@
     "expo-router": "~57.0.22",
     "expo-secure-store": "~57.0.4",
     "expo-sensors": "~57.0.3",
+    "expo-share-intent": "^8.0.1",
     "expo-sharing": "~57.0.21",
     "expo-speech": "~57.0.3",
     "expo-speech-recognition": "^57.1.0",

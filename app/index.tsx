@@ -4,6 +4,7 @@ import { View, Text, ScrollView } from 'react-native';
 import { useRouter, useLocalSearchParams } from 'expo-router';
 import NetInfo from '@react-native-community/netinfo';
 import { useQuickActionCallback } from 'expo-quick-actions/hooks';
+import { useShareIntentContext } from 'expo-share-intent';
 import { useSevenStore } from '../src/store/useSevenStore';
 import { quickActionsService, QUICK_ACTION_IDS } from '../src/services/quickActionsService';
 import { ParticleBackground } from '../src/components/ParticleBackground';
@@ -261,6 +262,18 @@ export default function DashboardScreen() {
       router.setParams({ briefing: undefined });
     }
   }, [params.briefing, router]);
+
+  // Shared content ("Share ->" from another app) always lands here first —
+  // the OS opens the app at its root route regardless of what screen was
+  // last shown. Only the chat screen knows how to consume a share intent
+  // (it owns the vision/document pipeline), so hop over there immediately;
+  // chat.tsx reads the same context and resets it once handled.
+  const { hasShareIntent } = useShareIntentContext();
+  useEffect(() => {
+    if (hasShareIntent) {
+      router.push('/chat');
+    }
+  }, [hasShareIntent, router]);
 
   useQuickActionCallback(
     useCallback(
