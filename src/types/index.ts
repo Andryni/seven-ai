@@ -86,6 +86,8 @@ export interface ChatSession {
   messages: ChatMessage[];
   /** Convenience count of user+assistant turns. */
   messageCount?: number;
+  /** Pinned sessions always sort first in History, regardless of recency. */
+  pinned?: boolean;
 }
 
 export interface ChatMessage {

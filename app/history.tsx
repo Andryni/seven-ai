@@ -13,6 +13,7 @@ import type { Palette } from '../src/theme/theme';
 import { t } from '../src/theme/i18n';
 import { haptics } from '../src/services/hapticsService';
 import type { ChatSession } from '../src/types';
+import { dateFilterCutoff, type DateFilter } from '../src/core/historyFilters';
 import { FONT } from '../src/theme/typography';
 import {
   ChevronLeft,
@@ -28,6 +29,8 @@ import {
   MessageSquarePlus,
   Download,
   FileText,
+  Pin,
+  PinOff,
 } from 'lucide-react-native';
 import { chatExportService } from '../src/services/chatExportService';
 
@@ -60,6 +63,7 @@ export default function HistoryScreen() {
   const openChatSession = useSevenStore((s) => s.openChatSession);
   const deleteChatSession = useSevenStore((s) => s.deleteChatSession);
   const renameChatSession = useSevenStore((s) => s.renameChatSession);
+  const togglePinChatSession = useSevenStore((s) => s.togglePinChatSession);
   const startNewSession = useSevenStore((s) => s.startNewSession);
 
   const palette = useTheme();
@@ -67,17 +71,24 @@ export default function HistoryScreen() {
   const lang = config.language ?? 'en';
 
   const [query, setQuery] = useState('');
+  const [dateFilter, setDateFilter] = useState<DateFilter>('all');
   const [renamingId, setRenamingId] = useState<string | null>(null);
   const [renameDraft, setRenameDraft] = useState('');
   const [pendingDelete, setPendingDelete] = useState<ChatSession | null>(null);
 
   const filteredSessions = useMemo<ChatSession[]>(() => {
     const q = query.trim().toLowerCase();
-    if (!q) return chatSessions;
-    return chatSessions.filter(
-      (s) => s.title.toLowerCase().includes(q) || s.messages.some((m) => m.text.toLowerCase().includes(q)),
-    );
-  }, [chatSessions, query]);
+    const cutoff = dateFilterCutoff(dateFilter);
+    const matches = chatSessions.filter((s) => {
+      if (cutoff !== null && s.updatedAt < cutoff) return false;
+      if (!q) return true;
+      return s.title.toLowerCase().includes(q) || s.messages.some((m) => m.text.toLowerCase().includes(q));
+    });
+    // Pinned sessions always float to the top, most-recently-updated first
+    // within each group — chatSessions is already newest-first, so a stable
+    // sort keying only on "pinned" preserves that order inside each half.
+    return [...matches].sort((a, b) => (b.pinned ? 1 : 0) - (a.pinned ? 1 : 0));
+  }, [chatSessions, query, dateFilter]);
 
   const handleOpenSession = (session: ChatSession) => {
     haptics.light();
@@ -214,6 +225,34 @@ export default function HistoryScreen() {
             )}
           </View>
         </View>
+
+        {/* Date range filter — narrows the (already-searched) list to a
+            recency window, so a long-time user can find "something from
+            this week" without scrolling past months of archives. */}
+        <View style={styles.dateFilterRow}>
+          {(['all', 'today', 'week', 'month'] as DateFilter[]).map((filter) => (
+            <TouchableOpacity
+              key={filter}
+              style={[styles.dateFilterChip, dateFilter === filter && styles.dateFilterChipActive]}
+              accessibilityLabel={t(`history.dateFilter.${filter}`, lang)}
+              accessibilityRole="button"
+              accessibilityState={{ selected: dateFilter === filter }}
+              onPress={() => {
+                haptics.light();
+                setDateFilter(filter);
+              }}
+            >
+              <Text
+                style={[
+                  styles.dateFilterChipText,
+                  dateFilter === filter && styles.dateFilterChipTextActive,
+                ]}
+              >
+                {t(`history.dateFilter.${filter}`, lang)}
+              </Text>
+            </TouchableOpacity>
+          ))}
+        </View>
       </ScreenReveal>
 
       {/* Sessions List — virtualized: this used to render every archived
@@ -231,7 +270,9 @@ export default function HistoryScreen() {
         ListEmptyComponent={
           <View style={styles.emptyState}>
             <History size={30} color={palette.textFaint} />
-            <Text style={styles.emptyText}>{t('history.empty', lang)}</Text>
+            <Text style={styles.emptyText}>
+              {chatSessions.length > 0 ? t('history.noResults', lang) : t('history.empty', lang)}
+            </Text>
           </View>
         }
         renderItem={({ item: session, index: cardIndex }: ListRenderItemInfo<ChatSession>) => {
@@ -272,6 +313,12 @@ export default function HistoryScreen() {
                     <Text style={styles.sessionTitle} numberOfLines={1}>
                       {session.title}
                     </Text>
+                  )}
+
+                  {session.pinned && !isRenaming && (
+                    <View style={styles.pinnedBadge}>
+                      <Pin size={9} color={palette.warning} />
+                    </View>
                   )}
 
                   {isCurrent && !isRenaming && (
@@ -316,6 +363,23 @@ export default function HistoryScreen() {
                       onPress={() => handleExportMarkdown(session)}
                     >
                       <FileText size={11} color={palette.info} />
+                    </TouchableOpacity>
+
+                    <TouchableOpacity
+                      style={[styles.actionBtn, styles.exportBtn]}
+                      accessibilityLabel={t(session.pinned ? 'history.unpin' : 'history.pin', lang)}
+                      accessibilityRole="button"
+                      accessibilityState={{ selected: !!session.pinned }}
+                      onPress={() => {
+                        haptics.light();
+                        togglePinChatSession(session.id);
+                      }}
+                    >
+                      {session.pinned ? (
+                        <PinOff size={11} color={palette.warning} />
+                      ) : (
+                        <Pin size={11} color={palette.info} />
+                      )}
                     </TouchableOpacity>
 
                     <TouchableOpacity
@@ -455,6 +519,34 @@ const historyStyles = (t: Palette) =>
       fontSize: 11,
       paddingVertical: 7,
     },
+    dateFilterRow: {
+      flexDirection: 'row',
+      gap: 6,
+      paddingHorizontal: 12,
+      paddingBottom: 8,
+    },
+    dateFilterChip: {
+      paddingHorizontal: 9,
+      paddingVertical: 4,
+      borderRadius: 5,
+      borderWidth: 1,
+      borderColor: t.border,
+      backgroundColor: t.bgElevated,
+    },
+    dateFilterChipActive: {
+      borderColor: t.accent,
+      backgroundColor: t.accentSoft,
+    },
+    dateFilterChipText: {
+      fontFamily: FONT.mono,
+      color: t.textDim,
+      fontSize: 9,
+      fontWeight: '700',
+      letterSpacing: 0.5,
+    },
+    dateFilterChipTextActive: {
+      color: t.accent,
+    },
     listScroll: {
       flex: 1,
     },
@@ -508,6 +600,15 @@ const historyStyles = (t: Palette) =>
       color: t.text,
       fontSize: 12,
       fontWeight: '700',
+    },
+    pinnedBadge: {
+      width: 18,
+      height: 18,
+      borderRadius: 4,
+      borderWidth: 1,
+      borderColor: t.warning,
+      alignItems: 'center',
+      justifyContent: 'center',
     },
     currentBadge: {
       backgroundColor: t.accentSoft,

@@ -56,6 +56,7 @@ interface SevenState {
   deleteChatSession: (sessionId: string) => void;
   /** Updates the title of an archived session. */
   renameChatSession: (sessionId: string, title: string) => void;
+  togglePinChatSession: (sessionId: string) => void;
   /** Permanently clears every archived session. */
   clearChatSessions: () => void;
   addTerminalLog: (text: string, type?: TerminalLogEntry['type']) => void;
@@ -537,6 +538,15 @@ export const useSevenStore = create<SevenState>((set, get) => ({
       if (!trimmed) return {};
       const chatSessions = state.chatSessions.map((s) =>
         s.id === sessionId ? { ...s, title: trimmed } : s
+      );
+      persistSlice('chatSessions', chatSessions);
+      return { chatSessions };
+    }),
+
+  togglePinChatSession: (sessionId) =>
+    set((state) => {
+      const chatSessions = state.chatSessions.map((s) =>
+        s.id === sessionId ? { ...s, pinned: !s.pinned } : s
       );
       persistSlice('chatSessions', chatSessions);
       return { chatSessions };
