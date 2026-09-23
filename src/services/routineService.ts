@@ -35,28 +35,59 @@ function notificationIdFor(routineId: string): string {
   return `seven-routine-${routineId}`;
 }
 
-/** Validates a trigger's shape before it is ever handed to the OS scheduler. */
+/** Trigger types scheduled ahead of time as OS local notifications. The
+ *  other three ('battery_low', 'calendar_soon', 'wifi_connect') are live
+ *  conditions evaluated in the foreground by `useConditionalRoutines`
+ *  instead — see that hook and the `RoutineTriggerType` doc comment. */
+export function isTimeBasedTrigger(type: RoutineTrigger['type']): boolean {
+  return type === 'daily' || type === 'weekly' || type === 'once';
+}
+
+/** Validates a trigger's shape before it is ever handed to the OS scheduler
+ *  (time-based triggers) or armed for foreground polling (conditional
+ *  triggers). */
 export function validateTrigger(trigger: RoutineTrigger): string | null {
-  if (!Number.isInteger(trigger.hour) || trigger.hour < 0 || trigger.hour > 23) {
-    return 'Hour must be between 0 and 23.';
-  }
-  if (!Number.isInteger(trigger.minute) || trigger.minute < 0 || trigger.minute > 59) {
-    return 'Minute must be between 0 and 59.';
-  }
-  if (trigger.type === 'weekly') {
-    if (!Number.isInteger(trigger.weekday) || trigger.weekday! < 1 || trigger.weekday! > 7) {
-      return 'A weekly routine needs a weekday between 1 (Sunday) and 7 (Saturday).';
+  if (isTimeBasedTrigger(trigger.type)) {
+    if (!Number.isInteger(trigger.hour) || trigger.hour! < 0 || trigger.hour! > 23) {
+      return 'Hour must be between 0 and 23.';
     }
-  }
-  if (trigger.type === 'once') {
-    if (!trigger.date || Number.isNaN(new Date(`${trigger.date}T00:00:00`).getTime())) {
-      return 'A one-time routine needs a valid date (YYYY-MM-DD).';
+    if (!Number.isInteger(trigger.minute) || trigger.minute! < 0 || trigger.minute! > 59) {
+      return 'Minute must be between 0 and 59.';
     }
-    const target = new Date(`${trigger.date}T${String(trigger.hour).padStart(2, '0')}:${String(trigger.minute).padStart(2, '0')}:00`);
-    if (target.getTime() <= Date.now()) {
-      return 'A one-time routine must be scheduled in the future.';
+    if (trigger.type === 'weekly') {
+      if (!Number.isInteger(trigger.weekday) || trigger.weekday! < 1 || trigger.weekday! > 7) {
+        return 'A weekly routine needs a weekday between 1 (Sunday) and 7 (Saturday).';
+      }
     }
+    if (trigger.type === 'once') {
+      if (!trigger.date || Number.isNaN(new Date(`${trigger.date}T00:00:00`).getTime())) {
+        return 'A one-time routine needs a valid date (YYYY-MM-DD).';
+      }
+      const target = new Date(
+        `${trigger.date}T${String(trigger.hour).padStart(2, '0')}:${String(trigger.minute).padStart(2, '0')}:00`
+      );
+      if (target.getTime() <= Date.now()) {
+        return 'A one-time routine must be scheduled in the future.';
+      }
+    }
+    return null;
   }
+
+  if (trigger.type === 'battery_low') {
+    const threshold = trigger.batteryThreshold ?? 20;
+    if (!Number.isInteger(threshold) || threshold < 1 || threshold > 100) {
+      return 'Battery threshold must be between 1 and 100.';
+    }
+    return null;
+  }
+  if (trigger.type === 'calendar_soon') {
+    const minutesBefore = trigger.minutesBefore ?? 15;
+    if (!Number.isInteger(minutesBefore) || minutesBefore < 1 || minutesBefore > 1440) {
+      return 'Lead time must be between 1 and 1440 minutes.';
+    }
+    return null;
+  }
+  // 'wifi_connect' has no extra fields to validate.
   return null;
 }
 
@@ -130,9 +161,16 @@ class RoutineService {
   /**
    * Schedules (or re-schedules, cancelling the previous notification first
    * so a rename/time-change never leaves an orphaned duplicate) the OS
-   * notification behind a routine. Returns 'invalid' without touching the
-   * OS at all when the trigger itself doesn't make sense, so callers can
-   * surface a precise error instead of a generic "failed".
+   * notification behind a time-based routine. Returns 'invalid' without
+   * touching the OS at all when the trigger itself doesn't make sense, so
+   * callers can surface a precise error instead of a generic "failed".
+   *
+   * Conditional triggers ('battery_low', 'calendar_soon', 'wifi_connect')
+   * have no fixed time to hand the OS scheduler — they're armed for live
+   * foreground polling instead (`useConditionalRoutines`) — so this only
+   * validates the trigger and confirms notification permission (since
+   * firing one still posts a real notification) without calling
+   * `scheduleNotificationAsync` at all.
    */
   async scheduleRoutine(routine: AutomationRoutine, language: 'fr' | 'en' = 'en'): Promise<RoutineScheduleResult> {
     if (!isSupported) return 'unsupported';
@@ -142,6 +180,15 @@ class RoutineService {
 
     const granted = await this.ensurePermissionsAsync();
     if (!granted) return 'denied';
+
+    if (!isTimeBasedTrigger(routine.trigger.type)) {
+      // Nothing scheduled ahead of time for a conditional trigger; the
+      // routine is simply "armed" for the next poll. Still cancel any
+      // stale OS notification left over from a previous time-based
+      // configuration of the same routine id.
+      await this.cancelRoutine(routine.id);
+      return 'scheduled';
+    }
 
     await this.cancelRoutine(routine.id);
 
@@ -165,6 +212,10 @@ class RoutineService {
     }
   }
 
+  /** Only ever called after `validateTrigger` has confirmed `hour`/`minute`
+   *  are present integers for a time-based trigger type — the `!` below
+   *  reflects that already-checked invariant rather than an unchecked
+   *  assumption. */
   private buildNotificationTrigger(trigger: RoutineTrigger): Notifications.SchedulableNotificationTriggerInput {
     switch (trigger.type) {
       case 'weekly':
@@ -172,8 +223,8 @@ class RoutineService {
           type: Notifications.SchedulableTriggerInputTypes.WEEKLY,
           channelId: CHANNEL_ID,
           weekday: trigger.weekday!,
-          hour: trigger.hour,
-          minute: trigger.minute,
+          hour: trigger.hour!,
+          minute: trigger.minute!,
         };
       case 'once': {
         const date = new Date(
@@ -190,8 +241,8 @@ class RoutineService {
         return {
           type: Notifications.SchedulableTriggerInputTypes.DAILY,
           channelId: CHANNEL_ID,
-          hour: trigger.hour,
-          minute: trigger.minute,
+          hour: trigger.hour!,
+          minute: trigger.minute!,
         };
     }
   }

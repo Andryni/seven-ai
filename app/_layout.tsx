@@ -20,6 +20,7 @@ import { SandboxExecutorHost } from '../src/components/SandboxExecutorHost';
 import { LaunchSplash } from '../src/components/LaunchSplash';
 import { AppLockScreen } from '../src/components/AppLockScreen';
 import { useAppLock } from '../src/hooks/useAppLock';
+import { useConditionalRoutines } from '../src/hooks/useConditionalRoutines';
 
 // Cap OS-driven font scaling app-wide before first paint. Module scope (not
 // inside the component) so it runs exactly once per process, the same way
@@ -141,6 +142,7 @@ const RootFrame: React.FC<{ palette: Palette }> = ({ palette }) => {
   const [showSplash, setShowSplash] = useState(true);
   const { locked, unlock } = useAppLock();
   const language = useSevenStore((s) => s.config.language ?? 'en');
+  useConditionalRoutines();
 
   return (
     <View style={[styles.container, { backgroundColor: palette.bg }]}>

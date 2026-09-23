@@ -173,19 +173,40 @@ export interface DaveProject {
   previewHtml: string;
 }
 
-/** When the routine fires: a fixed daily time, a specific weekday+time, or a one-shot date. */
-export type RoutineTriggerType = 'daily' | 'weekly' | 'once';
+/**
+ * When the routine fires: a fixed daily time, a specific weekday+time, a
+ * one-shot date (all three scheduled ahead of time as real OS local
+ * notifications), or a live condition evaluated while the app is running —
+ * battery dropping at/below a threshold, a calendar event starting soon, or
+ * the device joining Wi-Fi. There is no background-task/push infrastructure
+ * in this app (see the README's honesty matrix), so the three conditional
+ * types are only ever checked — and their action only ever runs — while
+ * SEVEN is open in the foreground (see `useConditionalRoutines`), the same
+ * "runs when you're back in the app" trade-off the time-based triggers
+ * already accept for their notification tap.
+ */
+export type RoutineTriggerType =
+  | 'daily'
+  | 'weekly'
+  | 'once'
+  | 'battery_low'
+  | 'calendar_soon'
+  | 'wifi_connect';
 
 export interface RoutineTrigger {
   type: RoutineTriggerType;
-  /** 0-23, local time. */
-  hour: number;
-  /** 0-59. */
-  minute: number;
+  /** 0-23, local time. Required for 'daily' / 'weekly' / 'once'; unused by the three conditional types. */
+  hour?: number;
+  /** 0-59. Required for 'daily' / 'weekly' / 'once'; unused by the three conditional types. */
+  minute?: number;
   /** 1 (Sunday) – 7 (Saturday), expo-notifications' weekday convention. Required for 'weekly'. */
   weekday?: number;
   /** ISO date (YYYY-MM-DD), required for 'once'. */
   date?: string;
+  /** 'battery_low' only: fires when battery level drops to/below this percentage (1-100). Defaults to 20. */
+  batteryThreshold?: number;
+  /** 'calendar_soon' only: fires this many minutes before a calendar event starts (1-1440). Defaults to 15. */
+  minutesBefore?: number;
 }
 
 /** What the routine actually does once it fires. Every action reuses an

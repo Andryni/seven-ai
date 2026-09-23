@@ -25,6 +25,7 @@ shaders, real OAuth, DM scraping and self-healing that did not exist).
 | Telemetry | ⚠️ CPU/RAM/latency simulated • **FPS real** (rAF-measured) • **Battery real** (expo-battery) • **Network real** (NetInfo) — simulated values tagged `[SIM]` in the HUD |
 | Self-healing "AST hot-patch" | ⚠️ Failure **reporting** (records patch logs + Gemini fix suggestions); it does not modify running code |
 | Morning briefing | ⚠️ Weather/battery are placeholders • ✅ **Daily 08:00 local notification** (expo-notifications, toggle in Settings) |
+| **Automation routines** | ✅ Real, on-device automation engine (Routines screen). `daily`/`weekly`/`once` schedule a real OS local notification ahead of time via `expo-notifications`. `battery_low`/`calendar_soon`/`wifi_connect` are **live conditions checked only while the app is in the foreground** (no background-task infra exists in this app) — they fire an immediate real notification + run the action the moment the condition is met, or on returning to the foreground, never invisibly |
 | **Long-term memory** | ✅ Real — permanent notes (Settings) injected into every agent request; "forget everything" wipes them |
 | **Theming & i18n** | ✅ 3 accent palettes (Ultron/Crimson/Matrix) × dark/light, applied instantly; UI in **English & French** |
 | **Haptics & offline queue** | ✅ Haptic feedback on all key actions; commands typed offline are queued and flushed on reconnect |

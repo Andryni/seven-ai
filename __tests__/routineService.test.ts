@@ -95,6 +95,32 @@ describe('validateTrigger', () => {
     const dateStr = future.toISOString().slice(0, 10);
     expect(validateTrigger({ type: 'once', hour: 9, minute: 0, date: dateStr })).toBeNull();
   });
+
+  it('accepts a battery_low trigger with a default threshold', () => {
+    expect(validateTrigger({ type: 'battery_low' })).toBeNull();
+  });
+
+  it('accepts a battery_low trigger with an explicit in-range threshold', () => {
+    expect(validateTrigger({ type: 'battery_low', batteryThreshold: 15 })).toBeNull();
+  });
+
+  it('rejects a battery_low trigger with an out-of-range threshold', () => {
+    expect(validateTrigger({ type: 'battery_low', batteryThreshold: 0 })).toMatch(/threshold/i);
+    expect(validateTrigger({ type: 'battery_low', batteryThreshold: 101 })).toMatch(/threshold/i);
+  });
+
+  it('accepts a calendar_soon trigger with a default lead time', () => {
+    expect(validateTrigger({ type: 'calendar_soon' })).toBeNull();
+  });
+
+  it('rejects a calendar_soon trigger with an out-of-range lead time', () => {
+    expect(validateTrigger({ type: 'calendar_soon', minutesBefore: 0 })).toMatch(/minutes/i);
+    expect(validateTrigger({ type: 'calendar_soon', minutesBefore: 5000 })).toMatch(/minutes/i);
+  });
+
+  it('accepts a wifi_connect trigger with no extra fields', () => {
+    expect(validateTrigger({ type: 'wifi_connect' })).toBeNull();
+  });
 });
 
 describe('routineService.scheduleRoutine', () => {
@@ -161,6 +187,40 @@ describe('routineService.scheduleRoutine', () => {
     await routineService.scheduleRoutine(makeRoutine({ name: 'Brief matinal' }), 'fr');
     const call = mockedNotifications.scheduleNotificationAsync.mock.calls[0][0];
     expect(call.content.title).toMatch(/Briefing programmé/);
+  });
+});
+
+describe('routineService.scheduleRoutine — conditional triggers', () => {
+  beforeEach(() => {
+    jest.clearAllMocks();
+    mockedNotifications.getPermissionsAsync.mockResolvedValue({ status: 'granted' } as any);
+    mockedNotifications.requestPermissionsAsync.mockResolvedValue({ status: 'granted' } as any);
+  });
+
+  it('arms a battery_low routine without ever calling scheduleNotificationAsync', async () => {
+    const routine = makeRoutine({ trigger: { type: 'battery_low', batteryThreshold: 15 } });
+    const result = await routineService.scheduleRoutine(routine);
+    expect(result).toBe('scheduled');
+    expect(mockedNotifications.scheduleNotificationAsync).not.toHaveBeenCalled();
+  });
+
+  it('still cancels a stale OS notification left over from a previous time-based config', async () => {
+    const routine = makeRoutine({ trigger: { type: 'wifi_connect' } });
+    await routineService.scheduleRoutine(routine);
+    expect(mockedNotifications.cancelScheduledNotificationAsync).toHaveBeenCalledWith('seven-routine-r1');
+  });
+
+  it('returns "invalid" for an out-of-range calendar_soon lead time without touching the OS', async () => {
+    const routine = makeRoutine({ trigger: { type: 'calendar_soon', minutesBefore: -5 } });
+    const result = await routineService.scheduleRoutine(routine);
+    expect(result).toBe('invalid');
+    expect(mockedNotifications.getPermissionsAsync).not.toHaveBeenCalled();
+  });
+
+  it('still checks/requests notification permission for a conditional trigger (it posts real notifications when it fires)', async () => {
+    const routine = makeRoutine({ trigger: { type: 'battery_low' } });
+    await routineService.scheduleRoutine(routine);
+    expect(mockedNotifications.getPermissionsAsync).toHaveBeenCalled();
   });
 });
 

@@ -1,0 +1,167 @@
+import { useEffect, useRef } from 'react';
+import { Platform, AppState, type AppStateStatus } from 'react-native';
+import * as Battery from 'expo-battery';
+import NetInfo from '@react-native-community/netinfo';
+import * as Notifications from 'expo-notifications';
+import { useSevenStore } from '../store/useSevenStore';
+import { calendarService } from '../services/calendarService';
+import { routineService } from '../services/routineService';
+import type { AutomationRoutine } from '../types';
+import {
+  shouldFireBatteryLow,
+  shouldFireWifiConnect,
+  calendarEventsDueSoon,
+  type ConditionalRoutineState,
+} from '../core/conditionalRoutines';
+
+/**
+ * Drives the three "live condition" routine triggers (battery_low,
+ * calendar_soon, wifi_connect) — see the `RoutineTriggerType` doc comment
+ * for why these only ever evaluate in the foreground: there is no
+ * background-task/push infrastructure in this app.
+ *
+ * Mounted once from `app/_layout.tsx`, alongside the rest of the app-wide
+ * setup (font scaling, app lock). Polls every `POLL_INTERVAL_MS` while the
+ * app is foregrounded (battery/network already push their own change
+ * events too, so battery_low and wifi_connect react close to instantly;
+ * the poll mainly drives calendar_soon, which has no native "about to
+ * start" event to subscribe to) and re-checks once immediately whenever
+ * the app returns to the foreground, so a routine due while the phone was
+ * locked doesn't have to wait for the next tick.
+ *
+ * Firing a conditional routine posts an immediate local notification
+ * (trigger: null) — the same visible, tap-to-open mechanism the time-based
+ * routines already use — rather than silently running the action, so a
+ * calendar reminder or low-battery nudge is never invisible.
+ */
+const POLL_INTERVAL_MS = 60_000;
+const CHANNEL_ID = 'seven-routines';
+const NOTIFICATION_DATA_KIND = 'seven-conditional-routine';
+
+export function useConditionalRoutines(): void {
+  // One state slot per routine id, so battery_low/wifi_connect debounce
+  // independently per routine and calendar_soon tracks its own
+  // already-notified event ids without stepping on another routine's.
+  const stateByRoutineId = useRef<Map<string, ConditionalRoutineState>>(new Map());
+
+  useEffect(() => {
+    if (Platform.OS === 'web') return;
+
+    let cancelled = false;
+
+    const checkOnce = async () => {
+      const store = useSevenStore.getState();
+      const language = (store.config.language || 'en') === 'fr' ? 'fr' : 'en';
+      const routines = store.automationRoutines.filter(
+        (r) =>
+          r.enabled &&
+          (r.trigger.type === 'battery_low' ||
+            r.trigger.type === 'calendar_soon' ||
+            r.trigger.type === 'wifi_connect')
+      );
+      if (routines.length === 0) return;
+
+      // Fetch each live fact at most once per tick, even if several
+      // routines watch the same condition.
+      const needsBattery = routines.some((r) => r.trigger.type === 'battery_low');
+      const needsWifi = routines.some((r) => r.trigger.type === 'wifi_connect');
+      const needsCalendar = routines.some((r) => r.trigger.type === 'calendar_soon');
+
+      const [batteryLevel, netState, calendarGranted] = await Promise.all([
+        needsBattery ? Battery.getBatteryLevelAsync().catch(() => -1) : Promise.resolve(-1),
+        needsWifi ? NetInfo.fetch().catch(() => null) : Promise.resolve(null),
+        needsCalendar ? calendarService.hasPermission().catch(() => false) : Promise.resolve(false),
+      ]);
+      if (cancelled) return;
+
+      const batteryPct = batteryLevel >= 0 ? Math.round(batteryLevel * 100) : null;
+      const isWifiConnected = !!netState && netState.type === 'wifi' && !!netState.isConnected;
+      const calendarEvents =
+        needsCalendar && calendarGranted ? await calendarService.getTodayEvents().catch(() => null) : null;
+      if (cancelled) return;
+
+      for (const routine of routines) {
+        const prev = stateByRoutineId.current.get(routine.id) ?? {};
+
+        if (routine.trigger.type === 'battery_low' && batteryPct !== null) {
+          const threshold = routine.trigger.batteryThreshold ?? 20;
+          if (shouldFireBatteryLow(routine, batteryPct, prev)) {
+            await fireConditionalRoutine(routine, language);
+            stateByRoutineId.current.set(routine.id, { ...prev, lastFiredAt: Date.now() });
+          } else if (batteryPct > threshold && prev.lastFiredAt) {
+            // Recharged back above the threshold: re-arm for the next dip.
+            stateByRoutineId.current.set(routine.id, { ...prev, lastFiredAt: undefined });
+          }
+          continue;
+        }
+
+        if (routine.trigger.type === 'wifi_connect') {
+          if (shouldFireWifiConnect(routine, isWifiConnected, prev)) {
+            await fireConditionalRoutine(routine, language);
+          }
+          stateByRoutineId.current.set(routine.id, { ...prev, wasConnected: isWifiConnected });
+          continue;
+        }
+
+        if (routine.trigger.type === 'calendar_soon') {
+          const due = calendarEventsDueSoon(routine, calendarEvents ?? [], prev);
+          if (due.length > 0) {
+            for (const event of due) {
+              await fireConditionalRoutine(routine, language, event.title);
+            }
+            stateByRoutineId.current.set(routine.id, {
+              ...prev,
+              notifiedEventIds: [...(prev.notifiedEventIds ?? []), ...due.map((e) => e.id)],
+            });
+          }
+        }
+      }
+    };
+
+    const fireConditionalRoutine = async (
+      routine: AutomationRoutine,
+      language: 'fr' | 'en',
+      eventTitle?: string
+    ) => {
+      const store = useSevenStore.getState();
+      const outcome = await routineService.runAction(routine.action, language);
+      store.updateAutomationRoutine(routine.id, { lastRunAt: Date.now() });
+      store.addTerminalLog(`ROUTINE (${routine.name}): ${outcome}`, 'success');
+      try {
+        const granted = await routineService.ensurePermissionsAsync();
+        if (!granted) return;
+        const title =
+          language === 'fr' ? `SEVEN // ${routine.name}` : `SEVEN // ${routine.name}`;
+        const body = eventTitle
+          ? language === 'fr'
+            ? `"${eventTitle}" commence bientôt.`
+            : `"${eventTitle}" starts soon.`
+          : outcome;
+        await Notifications.scheduleNotificationAsync({
+          content: {
+            title,
+            body,
+            sound: true,
+            data: { kind: NOTIFICATION_DATA_KIND, routineId: routine.id },
+          },
+          trigger: Platform.OS === 'android' ? { channelId: CHANNEL_ID } : null,
+        });
+      } catch {
+        // Notification best-effort only — the action itself already ran.
+      }
+    };
+
+    checkOnce();
+    const interval = setInterval(checkOnce, POLL_INTERVAL_MS);
+
+    const appStateSub = AppState.addEventListener('change', (next: AppStateStatus) => {
+      if (next === 'active') checkOnce();
+    });
+
+    return () => {
+      cancelled = true;
+      clearInterval(interval);
+      appStateSub.remove();
+    };
+  }, []);
+}

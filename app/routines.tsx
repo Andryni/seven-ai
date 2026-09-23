@@ -37,9 +37,25 @@ import {
   Repeat,
   CalendarClock,
   AlarmClock,
+  BatteryWarning,
+  CalendarCheck,
+  Wifi,
 } from 'lucide-react-native';
 
-const TRIGGER_TYPES: RoutineTriggerType[] = ['daily', 'weekly', 'once'];
+const TRIGGER_TYPES: RoutineTriggerType[] = [
+  'daily',
+  'weekly',
+  'once',
+  'battery_low',
+  'calendar_soon',
+  'wifi_connect',
+];
+/** Triggers scheduled ahead of time as OS notifications need an hour/minute
+ *  picker; the three conditional triggers are live checks with their own
+ *  dedicated field (threshold / lead time / none) instead. */
+const TIME_BASED_TRIGGERS: RoutineTriggerType[] = ['daily', 'weekly', 'once'];
+const BATTERY_THRESHOLDS = [5, 10, 15, 20, 25, 30, 40, 50];
+const CALENDAR_LEAD_MINUTES = [5, 10, 15, 30, 45, 60, 120];
 const ACTION_TYPES: RoutineActionType[] = [
   'morning_briefing',
   'organize_files',
@@ -75,6 +91,12 @@ function triggerIcon(type: RoutineTriggerType, color: string, size = 13) {
       return <Repeat size={size} color={color} />;
     case 'once':
       return <CalendarClock size={size} color={color} />;
+    case 'battery_low':
+      return <BatteryWarning size={size} color={color} />;
+    case 'calendar_soon':
+      return <CalendarCheck size={size} color={color} />;
+    case 'wifi_connect':
+      return <Wifi size={size} color={color} />;
     case 'daily':
     default:
       return <AlarmClock size={size} color={color} />;
@@ -86,13 +108,24 @@ function pad2(n: number): string {
 }
 
 function summarize(routine: AutomationRoutine, lang: 'fr' | 'en'): string {
-  const time = `${pad2(routine.trigger.hour)}:${pad2(routine.trigger.minute)}`;
-  if (routine.trigger.type === 'weekly') {
-    const weekday = t(`routines.weekday.${routine.trigger.weekday ?? 1}`, lang);
+  const { trigger } = routine;
+  if (trigger.type === 'battery_low') {
+    return t('routines.summary.batteryLow', lang).replace('{pct}', String(trigger.batteryThreshold ?? 20));
+  }
+  if (trigger.type === 'calendar_soon') {
+    return t('routines.summary.calendarSoon', lang).replace('{minutes}', String(trigger.minutesBefore ?? 15));
+  }
+  if (trigger.type === 'wifi_connect') {
+    return t('routines.summary.wifiConnect', lang);
+  }
+
+  const time = `${pad2(trigger.hour ?? 0)}:${pad2(trigger.minute ?? 0)}`;
+  if (trigger.type === 'weekly') {
+    const weekday = t(`routines.weekday.${trigger.weekday ?? 1}`, lang);
     return t('routines.summary.weekly', lang).replace('{weekday}', weekday).replace('{time}', time);
   }
-  if (routine.trigger.type === 'once') {
-    return t('routines.summary.once', lang).replace('{date}', routine.trigger.date ?? '?').replace('{time}', time);
+  if (trigger.type === 'once') {
+    return t('routines.summary.once', lang).replace('{date}', trigger.date ?? '?').replace('{time}', time);
   }
   return t('routines.summary.daily', lang).replace('{time}', time);
 }
@@ -354,10 +387,26 @@ export default function RoutinesScreen() {
                           ...editing,
                           trigger:
                             tt === 'weekly'
-                              ? { ...editing.trigger, type: tt, weekday: editing.trigger.weekday ?? 2 }
+                              ? {
+                                  type: tt,
+                                  hour: editing.trigger.hour ?? 8,
+                                  minute: editing.trigger.minute ?? 0,
+                                  weekday: editing.trigger.weekday ?? 2,
+                                }
                               : tt === 'once'
-                                ? { ...editing.trigger, type: tt, date: editing.trigger.date ?? tomorrowIso() }
-                                : { type: tt, hour: editing.trigger.hour, minute: editing.trigger.minute },
+                                ? {
+                                    type: tt,
+                                    hour: editing.trigger.hour ?? 8,
+                                    minute: editing.trigger.minute ?? 0,
+                                    date: editing.trigger.date ?? tomorrowIso(),
+                                  }
+                                : tt === 'battery_low'
+                                  ? { type: tt, batteryThreshold: editing.trigger.batteryThreshold ?? 20 }
+                                  : tt === 'calendar_soon'
+                                    ? { type: tt, minutesBefore: editing.trigger.minutesBefore ?? 15 }
+                                    : tt === 'wifi_connect'
+                                      ? { type: tt }
+                                      : { type: tt, hour: editing.trigger.hour ?? 8, minute: editing.trigger.minute ?? 0 },
                         })
                       }
                     >
@@ -408,9 +457,67 @@ export default function RoutinesScreen() {
                   </>
                 )}
 
-                <Text style={styles.fieldLabel}>{t('routines.time', lang)}</Text>
-                <View style={styles.timeRow}>
-                  <ScrollView horizontal showsHorizontalScrollIndicator={false} style={styles.timeScroll}>
+                {editing.trigger.type === 'battery_low' && (
+                  <>
+                    <Text style={styles.fieldLabel}>{t('routines.batteryThreshold', lang)}</Text>
+                    <View style={styles.chipRow}>
+                      {BATTERY_THRESHOLDS.map((pct) => (
+                        <TouchableOpacity
+                          key={pct}
+                          style={[styles.dayChip, editing.trigger.batteryThreshold === pct && styles.chipActive]}
+                          onPress={() =>
+                            setEditing({ ...editing, trigger: { ...editing.trigger, batteryThreshold: pct } })
+                          }
+                        >
+                          <Text
+                            style={[
+                              styles.chipText,
+                              editing.trigger.batteryThreshold === pct && styles.chipTextActive,
+                            ]}
+                          >
+                            {pct}%
+                          </Text>
+                        </TouchableOpacity>
+                      ))}
+                    </View>
+                  </>
+                )}
+
+                {editing.trigger.type === 'calendar_soon' && (
+                  <>
+                    <Text style={styles.fieldLabel}>{t('routines.leadTime', lang)}</Text>
+                    <View style={styles.chipRow}>
+                      {CALENDAR_LEAD_MINUTES.map((mins) => (
+                        <TouchableOpacity
+                          key={mins}
+                          style={[styles.dayChip, editing.trigger.minutesBefore === mins && styles.chipActive]}
+                          onPress={() =>
+                            setEditing({ ...editing, trigger: { ...editing.trigger, minutesBefore: mins } })
+                          }
+                        >
+                          <Text
+                            style={[
+                              styles.chipText,
+                              editing.trigger.minutesBefore === mins && styles.chipTextActive,
+                            ]}
+                          >
+                            {mins}m
+                          </Text>
+                        </TouchableOpacity>
+                      ))}
+                    </View>
+                  </>
+                )}
+
+                {editing.trigger.type === 'wifi_connect' && (
+                  <Text style={styles.fieldHint}>{t('routines.wifiHint', lang)}</Text>
+                )}
+
+                {TIME_BASED_TRIGGERS.includes(editing.trigger.type) && (
+                  <>
+                    <Text style={styles.fieldLabel}>{t('routines.time', lang)}</Text>
+                    <View style={styles.timeRow}>
+                      <ScrollView horizontal showsHorizontalScrollIndicator={false} style={styles.timeScroll}>
                     <View style={styles.chipRow}>
                       {HOURS.map((h) => (
                         <TouchableOpacity
@@ -441,7 +548,9 @@ export default function RoutinesScreen() {
                       ))}
                     </View>
                   </ScrollView>
-                </View>
+                    </View>
+                  </>
+                )}
 
                 <Text style={styles.fieldLabel}>{t('routines.action', lang)}</Text>
                 <View style={styles.chipRow}>
@@ -612,6 +721,13 @@ const routinesStyles = (t: Palette) =>
       fontWeight: '700',
       letterSpacing: 0.6,
       marginBottom: 6,
+    },
+    fieldHint: {
+      fontFamily: FONT.ui,
+      color: t.textDim,
+      fontSize: 11,
+      lineHeight: 15,
+      marginBottom: 12,
     },
     chipRow: { flexDirection: 'row', flexWrap: 'wrap', gap: 6, marginBottom: 12 },
     chip: {

@@ -138,6 +138,48 @@ describe('executeTool — automation routines', () => {
       expect(stored.trigger).toMatchObject({ type: 'weekly', weekday: 2 });
       expect(stored.action).toMatchObject({ type: 'reminder', payload: 'Call the bank about the loan' });
     });
+
+    it('creates a battery_low routine without requiring hour/minute', async () => {
+      mockedRoutineService.scheduleRoutine.mockResolvedValue('scheduled');
+      const result = await executeTool('create_routine', {
+        name: 'Low battery nudge',
+        trigger_type: 'battery_low',
+        battery_threshold: 15,
+        action_type: 'reminder',
+        payload: 'Plug me in',
+      });
+      expect(result.text).toMatch(/scheduled/i);
+      const stored = useSevenStore.getState().automationRoutines[0];
+      expect(stored.trigger).toMatchObject({ type: 'battery_low', batteryThreshold: 15 });
+      expect(stored.trigger.hour).toBeUndefined();
+      expect(result.toolCall?.summary).toMatch(/battery <= 15%/);
+    });
+
+    it('creates a calendar_soon routine with the configured lead time', async () => {
+      mockedRoutineService.scheduleRoutine.mockResolvedValue('scheduled');
+      const result = await executeTool('create_routine', {
+        name: 'Meeting heads-up',
+        trigger_type: 'calendar_soon',
+        minutes_before: 10,
+        action_type: 'reminder',
+        payload: 'Meeting starting soon',
+      });
+      const stored = useSevenStore.getState().automationRoutines[0];
+      expect(stored.trigger).toMatchObject({ type: 'calendar_soon', minutesBefore: 10 });
+      expect(result.toolCall?.summary).toMatch(/10min before events/);
+    });
+
+    it('creates a wifi_connect routine with no extra fields', async () => {
+      mockedRoutineService.scheduleRoutine.mockResolvedValue('scheduled');
+      const result = await executeTool('create_routine', {
+        name: 'Home wifi hello',
+        trigger_type: 'wifi_connect',
+        action_type: 'check_emails',
+      });
+      const stored = useSevenStore.getState().automationRoutines[0];
+      expect(stored.trigger).toMatchObject({ type: 'wifi_connect' });
+      expect(result.toolCall?.summary).toMatch(/next wifi connect/);
+    });
   });
 
   describe('list_routines', () => {

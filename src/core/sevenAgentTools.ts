@@ -245,18 +245,19 @@ export const TOOL_DECLARATIONS: FunctionDeclaration[] = [
   {
     name: 'create_routine',
     description:
-      'Schedule a recurring or one-time automation routine (e.g. "every day at 8am run my briefing", "every Monday at 9 check my emails", "remind me tomorrow at 5pm to call the bank"). The routine fires as a real device notification at the given time; tapping it (or reopening the app right after) runs the action.',
+      'Schedule a recurring, one-time, or condition-based automation routine (e.g. "every day at 8am run my briefing", "every Monday at 9 check my emails", "remind me tomorrow at 5pm to call the bank", "remind me when my battery drops below 15%", "warn me 10 minutes before my next meeting", "tell me the weather when I connect to wifi"). Time-based routines (daily/weekly/once) fire as a real device notification at the given time. Condition-based routines (battery_low/calendar_soon/wifi_connect) are checked live while the app is open in the foreground and also post a real notification the moment the condition is met — there is no background execution. Tapping the notification (or reopening the app right after) runs the action.',
     parameters: {
       type: Type.OBJECT,
       properties: {
         name: { type: Type.STRING, description: 'Short human name for the routine.' },
         trigger_type: {
           type: Type.STRING,
-          enum: ['daily', 'weekly', 'once'],
-          description: '"daily" repeats every day, "weekly" repeats on one weekday, "once" fires a single time.',
+          enum: ['daily', 'weekly', 'once', 'battery_low', 'calendar_soon', 'wifi_connect'],
+          description:
+            '"daily" repeats every day, "weekly" repeats on one weekday, "once" fires a single time — all three need hour/minute. "battery_low" fires when battery drops to/below battery_threshold. "calendar_soon" fires minutes_before a calendar event starts. "wifi_connect" fires the next time this device joins Wi-Fi. The three condition types need no hour/minute/date.',
         },
-        hour: { type: Type.NUMBER, description: 'Hour of day, 0-23, in the user\'s local time.' },
-        minute: { type: Type.NUMBER, description: 'Minute of the hour, 0-59. Defaults to 0.' },
+        hour: { type: Type.NUMBER, description: 'Required for daily/weekly/once. Hour of day, 0-23, in the user\'s local time.' },
+        minute: { type: Type.NUMBER, description: 'Minute of the hour, 0-59. Defaults to 0. Used only by daily/weekly/once.' },
         weekday: {
           type: Type.NUMBER,
           description: 'Required when trigger_type is "weekly": 1=Sunday, 2=Monday, ... 7=Saturday.',
@@ -264,6 +265,14 @@ export const TOOL_DECLARATIONS: FunctionDeclaration[] = [
         date: {
           type: Type.STRING,
           description: 'Required when trigger_type is "once": an ISO date YYYY-MM-DD in the future.',
+        },
+        battery_threshold: {
+          type: Type.NUMBER,
+          description: 'Only for trigger_type "battery_low": percentage (1-100) at/below which it fires. Defaults to 20.',
+        },
+        minutes_before: {
+          type: Type.NUMBER,
+          description: 'Only for trigger_type "calendar_soon": how many minutes before an event start it fires. Defaults to 15.',
         },
         action_type: {
           type: Type.STRING,
@@ -275,7 +284,7 @@ export const TOOL_DECLARATIONS: FunctionDeclaration[] = [
           description: 'Extra detail for the action: the search query for "web_search", or the reminder text for "reminder".',
         },
       },
-      required: ['name', 'trigger_type', 'hour', 'action_type'],
+      required: ['name', 'trigger_type', 'action_type'],
     },
   },
   {
@@ -785,9 +794,24 @@ onEvent?: (line: string) => void
       const language = (store.config.language || 'en') === 'fr' ? 'fr' : 'en';
 
       const routineName = String(args.name || 'Untitled routine').trim() || 'Untitled routine';
-      const triggerType = String(args.trigger_type || 'daily') as 'daily' | 'weekly' | 'once';
-      const hour = Math.trunc(Number(args.hour));
-      const minute = Number.isFinite(Number(args.minute)) ? Math.trunc(Number(args.minute)) : 0;
+      const triggerType = String(args.trigger_type || 'daily') as
+        | 'daily'
+        | 'weekly'
+        | 'once'
+        | 'battery_low'
+        | 'calendar_soon'
+        | 'wifi_connect';
+      const isConditional =
+        triggerType === 'battery_low' || triggerType === 'calendar_soon' || triggerType === 'wifi_connect';
+      // Time-based triggers need an hour; conditional triggers don't take one
+      // at all, so hour/minute are only computed (and only required) for the
+      // former — this mirrors the tool schema's `required` list.
+      const hour = isConditional ? undefined : Math.trunc(Number(args.hour));
+      const minute = isConditional
+        ? undefined
+        : Number.isFinite(Number(args.minute))
+          ? Math.trunc(Number(args.minute))
+          : 0;
       const actionType = String(args.action_type || 'reminder') as
         | 'morning_briefing'
         | 'organize_files'
@@ -805,6 +829,9 @@ onEvent?: (line: string) => void
           minute,
           weekday: args.weekday !== undefined ? Math.trunc(Number(args.weekday)) : undefined,
           date: args.date !== undefined ? String(args.date) : undefined,
+          batteryThreshold:
+            args.battery_threshold !== undefined ? Math.trunc(Number(args.battery_threshold)) : undefined,
+          minutesBefore: args.minutes_before !== undefined ? Math.trunc(Number(args.minutes_before)) : undefined,
         },
         action: { type: actionType, payload },
         enabled: true,
@@ -833,12 +860,20 @@ onEvent?: (line: string) => void
         return { text: `I saved "${routineName}", but could not reach the scheduler to arm it. Try again in a moment or from the Routines screen.` };
       }
 
+      const scheduleDetail = isConditional
+        ? triggerType === 'battery_low'
+          ? `battery <= ${routine.trigger.batteryThreshold ?? 20}%`
+          : triggerType === 'calendar_soon'
+            ? `${routine.trigger.minutesBefore ?? 15}min before events`
+            : 'next wifi connect'
+        : `${String(hour).padStart(2, '0')}:${String(minute).padStart(2, '0')}`;
+
       return {
         text: `Routine "${routineName}" is scheduled.`,
         toolCall: {
           name: 'routine',
           status: 'completed',
-          summary: `Scheduled "${routineName}" (${triggerType}, ${String(hour).padStart(2, '0')}:${String(minute).padStart(2, '0')})`,
+          summary: `Scheduled "${routineName}" (${triggerType}, ${scheduleDetail})`,
         },
       };
     }
