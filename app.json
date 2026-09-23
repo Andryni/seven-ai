@@ -2,7 +2,7 @@
   "expo": {
     "name": "SEVEN",
     "slug": "seven-ai",
-    "version": "3.2.0",
+    "version": "3.3.0",
     "orientation": "portrait",
     "icon": "./assets/icon.png",
     "scheme": "seven",
@@ -38,6 +38,7 @@
         "backgroundColor": "#050508"
       },
       "package": "com.seven.ai",
+      "versionCode": 4,
       "permissions": [
         "android.permission.INTERNET",
         "android.permission.ACCESS_NETWORK_STATE",
