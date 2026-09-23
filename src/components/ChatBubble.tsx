@@ -13,6 +13,8 @@ import * as Clipboard from 'expo-clipboard';
 import { ChatMessage } from '../types';
 import { MarkdownText } from './MarkdownText';
 import { TypingDots, ScanBar } from './LoadingIndicators';
+import { formatClockTime } from '../core/datetime';
+import { useSevenStore } from '../store/useSevenStore';
 import {
   Cpu,
   User,
@@ -42,6 +44,7 @@ export const ChatBubble: React.FC<ChatBubbleProps> = ({ message, onAction }) => 
   const isUser = message.sender === 'user';
   const isSystem = message.sender === 'system';
   const [copied, setCopied] = useState(false);
+  const language = useSevenStore((s) => ((s.config.language || 'en') === 'fr' ? 'fr' : 'en'));
 
   // While SEVEN works, the placeholder bubble is either fully empty (pass 1
   // in flight) or only contains tool-progress markers like ⟨WEB INTELLIGENCE: …⟩.
@@ -54,10 +57,7 @@ export const ChatBubble: React.FC<ChatBubbleProps> = ({ message, onAction }) => 
     message.text.replace(/\u27e8[^\u27e9]*\u27e9/g, '').trim().length > 0;
   const isPendingAssistant = !isUser && !isSystem && !hasPlainContent && !message.imageUri;
 
-  const timeStr = new Date(message.timestamp).toLocaleTimeString([], {
-    hour: '2-digit',
-    minute: '2-digit',
-  });
+  const timeStr = formatClockTime(new Date(message.timestamp), language);
 
   const handleCopy = async () => {
     try {

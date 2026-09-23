@@ -18,6 +18,16 @@ import {
   AutomationRoutine,
 } from '../types';
 import { JARVIS_VOICE_MODELS, fishVoiceFor } from '../services/fishAudioService';
+import { formatClockTimeWithSeconds } from '../core/datetime';
+
+/** Timestamp for terminal-log lines, in the UI language. The three boot logs
+ *  below are created at module evaluation — before the store exists and
+ *  before the saved config is hydrated — so they use the default language;
+ *  every log added afterwards (see `addTerminalLog`) reflects the user's
+ *  real language. */
+function bootTimestamp(): string {
+  return formatClockTimeWithSeconds(new Date(), 'en');
+}
 
 interface SevenState {
   config: AssistantConfig;
@@ -156,19 +166,19 @@ const initialChatHistory: ChatMessage[] = [
 const initialTerminalLogs: TerminalLogEntry[] = [
   {
     id: 'log-1',
-    timestamp: new Date().toLocaleTimeString([], { hour: '2-digit', minute: '2-digit', second: '2-digit' }),
+    timestamp: bootTimestamp(),
     text: 'SYSTEM INITIALIZED: SEVEN Android Core',
     type: 'info',
   },
   {
     id: 'log-2',
-    timestamp: new Date().toLocaleTimeString([], { hour: '2-digit', minute: '2-digit', second: '2-digit' }),
+    timestamp: bootTimestamp(),
     text: 'Mounting Neural Acceleration Context...',
     type: 'cmd',
   },
   {
     id: 'log-3',
-    timestamp: new Date().toLocaleTimeString([], { hour: '2-digit', minute: '2-digit', second: '2-digit' }),
+    timestamp: bootTimestamp(),
     text: 'Quantum state synchronized. Ready for directives.',
     type: 'success',
   },
@@ -563,11 +573,10 @@ export const useSevenStore = create<SevenState>((set, get) => ({
     set((state) => {
       const newLog: TerminalLogEntry = {
         id: `log-${Date.now()}-${Math.random().toString(36).slice(2, 5)}`,
-        timestamp: new Date().toLocaleTimeString([], {
-          hour: '2-digit',
-          minute: '2-digit',
-          second: '2-digit',
-        }),
+        timestamp: formatClockTimeWithSeconds(
+          new Date(),
+          (state.config.language || 'en') === 'fr' ? 'fr' : 'en'
+        ),
         text,
         type,
       };
