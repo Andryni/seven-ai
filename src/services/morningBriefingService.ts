@@ -3,6 +3,7 @@ import * as Battery from 'expo-battery';
 import * as FileSystem from 'expo-file-system/legacy';
 import { useSevenStore } from '../store/useSevenStore';
 import { fetchLiveBriefing, type LiveNewsItem } from './liveInfoService';
+import { calendarService } from './calendarService';
 
 export interface MorningBriefingData {
   greeting: string;
@@ -90,18 +91,38 @@ class MorningBriefingService {
       : (hour < 12 ? 'Good morning' : hour < 18 ? 'Good afternoon' : 'Good evening');
 
     const emails = store.googleState.recentEmails;
-    const events = store.googleState.upcomingEvents;
 
-    // Real world facts first: Open-Meteo for the weather, RSS for the news.
-    // Everything here fails soft — an unreachable service simply falls back to
-    // the neutral copy below instead of breaking the briefing.
-    const [live, deviceHealth] = await Promise.all([
+    // Real world facts first: Open-Meteo for the weather, RSS for the news,
+    // and — when calendar permission was already granted — the actual
+    // device agenda for today. This used to always read `googleState.
+    // upcomingEvents`, a field nothing in the app ever populated, so the
+    // briefing's "agenda" was permanently empty; it now reflects the real
+    // calendar. Permission is never requested here (a background/greeting
+    // flow is the wrong moment to prompt) — an ungranted calendar simply
+    // yields an empty agenda, matching the previous behavior exactly.
+    const [live, deviceHealth, calendarGranted] = await Promise.all([
       fetchLiveBriefing(config.language === 'fr' ? 'fr' : 'en').catch(() => ({
         weather: null,
         news: [] as LiveNewsItem[],
       })),
       this.readDeviceHealth(),
+      calendarService.hasPermission().catch(() => false),
     ]);
+
+    const calendarEvents = calendarGranted
+      ? await calendarService.getTodayEvents().catch(() => null)
+      : null;
+
+    const events = (calendarEvents || []).map((e) => ({
+      id: e.id,
+      title: e.title,
+      time: e.allDay
+        ? isFr
+          ? 'Toute la journée'
+          : 'All day'
+        : e.startDate.toLocaleTimeString(isFr ? 'fr-FR' : 'en-US', { hour: '2-digit', minute: '2-digit' }),
+      location: e.location || undefined,
+    }));
 
     const weatherLine = live.weather
       ? isFr

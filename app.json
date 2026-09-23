@@ -26,7 +26,9 @@
           }
         },
         "NSSpeechRecognitionUsageDescription": "Allow SEVEN to securely recognize your speech for hands-free commands.",
-        "NSMicrophoneUsageDescription": "Allow SEVEN to use the microphone for voice commands and the \"Hey Seven\" wake word."
+        "NSMicrophoneUsageDescription": "Allow SEVEN to use the microphone for voice commands and the \"Hey Seven\" wake word.",
+        "NSContactsUsageDescription": "Allow SEVEN to read your contacts so you can call or message someone by name.",
+        "NSCalendarsFullAccessUsageDescription": "Allow SEVEN to read and create events on your calendar for briefings and scheduling."
       }
     },
     "android": {
@@ -49,7 +51,10 @@
         "android.permission.RECORD_AUDIO",
         "android.permission.MODIFY_AUDIO_SETTINGS",
         "android.permission.FOREGROUND_SERVICE",
-        "android.permission.FOREGROUND_SERVICE_MEDIA_PLAYBACK"
+        "android.permission.FOREGROUND_SERVICE_MEDIA_PLAYBACK",
+        "android.permission.READ_CONTACTS",
+        "android.permission.READ_CALENDAR",
+        "android.permission.WRITE_CALENDAR"
       ]
     },
     "web": {
@@ -82,6 +87,18 @@
         }
       ],
       "expo-quick-actions",
+      [
+        "expo-contacts",
+        {
+          "contactsPermission": "Allow SEVEN to read your contacts so you can call or message someone by name."
+        }
+      ],
+      [
+        "expo-calendar",
+        {
+          "calendarPermission": "Allow SEVEN to read and create events on your calendar for briefings and scheduling."
+        }
+      ],
       [
         "react-native-android-widget",
         {

@@ -11,6 +11,8 @@ import { deviceControl } from '../services/deviceControlService';
 import { webSearchService } from '../services/webSearchService';
 import { sandboxService } from '../services/sandboxService';
 import { memoryService } from '../services/memoryService';
+import { contactsService, ResolvedContact } from '../services/contactsService';
+import { calendarService } from '../services/calendarService';
 
 /**
  * Tool declarations and execution, split out of `sevenAgent.ts`.
@@ -111,36 +113,67 @@ export const TOOL_DECLARATIONS: FunctionDeclaration[] = [
   },
   {
     name: 'make_phone_call',
-    description: 'Open Android phone dialer to call a phone number.',
+    description:
+      'Open the phone dialer to call someone. Provide either a raw phone_number OR a contact_name (e.g. "Maman", "Jean Dupont") to look up in the device address book — never both are required, contact_name is preferred whenever the user names a person instead of reciting digits.',
     parameters: {
       type: Type.OBJECT,
       properties: {
-        phone_number: { type: Type.STRING, description: 'The phone number to call.' },
+        phone_number: { type: Type.STRING, description: 'A raw phone number to call, if the user gave one directly.' },
+        contact_name: { type: Type.STRING, description: 'The name of a person in the device address book to call.' },
       },
-      required: ['phone_number'],
     },
   },
   {
     name: 'send_sms',
-    description: 'Open Android SMS messenger to send a text to a phone number.',
+    description:
+      'Open the SMS messenger to text someone. Provide either a raw phone_number OR a contact_name to look up in the device address book.',
     parameters: {
       type: Type.OBJECT,
       properties: {
-        phone_number: { type: Type.STRING, description: 'The phone number to message.' },
+        phone_number: { type: Type.STRING, description: 'A raw phone number to message, if the user gave one directly.' },
+        contact_name: { type: Type.STRING, description: 'The name of a person in the device address book to message.' },
         message: { type: Type.STRING, description: 'Optional text message body.' },
       },
-      required: ['phone_number'],
     },
   },
   {
     name: 'open_whatsapp',
-    description: 'Open WhatsApp with an optional contact phone number and prefilled message.',
+    description:
+      'Open WhatsApp with an optional recipient and prefilled message. Provide either a raw phone_number OR a contact_name to look up in the device address book.',
     parameters: {
       type: Type.OBJECT,
       properties: {
-        phone_number: { type: Type.STRING, description: 'Optional contact phone number.' },
+        phone_number: { type: Type.STRING, description: 'Optional raw recipient phone number.' },
+        contact_name: { type: Type.STRING, description: 'Optional name of a person in the device address book.' },
         text: { type: Type.STRING, description: 'Message to send on WhatsApp.' },
       },
+    },
+  },
+  {
+    name: 'list_calendar_events',
+    description:
+      "List the user's calendar events for a date range (defaults to today if no dates are given). Use this to answer questions like \"what's on my agenda\" or as part of a morning briefing.",
+    parameters: {
+      type: Type.OBJECT,
+      properties: {
+        start_date: { type: Type.STRING, description: 'ISO date (YYYY-MM-DD) to start from. Defaults to today.' },
+        end_date: { type: Type.STRING, description: 'ISO date (YYYY-MM-DD) to end at, inclusive. Defaults to start_date.' },
+      },
+    },
+  },
+  {
+    name: 'create_calendar_event',
+    description: 'Create a new event on the device calendar (e.g. a meeting, reminder, or appointment).',
+    parameters: {
+      type: Type.OBJECT,
+      properties: {
+        title: { type: Type.STRING, description: 'Title of the event.' },
+        start_iso: { type: Type.STRING, description: 'ISO 8601 datetime the event starts at, e.g. 2026-09-24T15:00:00.' },
+        end_iso: { type: Type.STRING, description: 'ISO 8601 datetime the event ends at. If omitted, defaults to 1 hour after start.' },
+        location: { type: Type.STRING, description: 'Optional location or address.' },
+        notes: { type: Type.STRING, description: 'Optional notes/description for the event.' },
+      },
+      required: ['title', 'start_iso'],
     },
   },
   {
@@ -209,6 +242,67 @@ export const TOOL_DECLARATIONS: FunctionDeclaration[] = [
     },
   },
 ];
+
+/**
+ * Result of turning a tool's raw `phone_number` / `contact_name` arguments
+ * into an actual number to dial/text. Centralized so make_phone_call,
+ * send_sms and open_whatsapp all get identical, predictable behavior for
+ * the not-found / ambiguous / permission-denied edge cases instead of each
+ * reimplementing (and drifting from) the same logic.
+ */
+type PhoneResolution =
+  | { kind: 'resolved'; phoneNumber: string; matchedName?: string }
+  /** Nothing to resolve — neither phone_number nor contact_name was given. */
+  | { kind: 'missing' }
+  | { kind: 'error'; message: string };
+
+async function resolvePhoneArgs(
+  args: Record<string, any>,
+  actionLabel: string
+): Promise<PhoneResolution> {
+  const rawPhone = args.phone_number ? String(args.phone_number).trim() : '';
+  const contactName = args.contact_name ? String(args.contact_name).trim() : '';
+
+  if (rawPhone) {
+    return { kind: 'resolved', phoneNumber: rawPhone };
+  }
+  if (!contactName) {
+    return { kind: 'missing' };
+  }
+
+  const lookup = await contactsService.resolveContactByName(contactName);
+  switch (lookup.status) {
+    case 'found':
+      return {
+        kind: 'resolved',
+        phoneNumber: lookup.contact.phoneNumbers[0],
+        matchedName: lookup.contact.name,
+      };
+    case 'ambiguous': {
+      const names = lookup.matches.map((m: ResolvedContact) => m.name).join(', ');
+      return {
+        kind: 'error',
+        message: `I found several contacts matching "${contactName}" (${names}). Please specify which one, or give the phone number directly.`,
+      };
+    }
+    case 'not_found':
+      return {
+        kind: 'error',
+        message: `No contact named "${contactName}" was found in your address book. Try the exact name or give the phone number directly.`,
+      };
+    case 'permission_denied':
+      return {
+        kind: 'error',
+        message: `I don't have permission to read your contacts, so I cannot ${actionLabel} "${contactName}". Grant contacts access in Settings, or give the phone number directly.`,
+      };
+    case 'unavailable':
+    default:
+      return {
+        kind: 'error',
+        message: `I could not read your address book right now, so I cannot ${actionLabel} "${contactName}". Try giving the phone number directly.`,
+      };
+  }
+}
 
 export async function executeTool(
 name: string,
@@ -374,38 +468,68 @@ onEvent?: (line: string) => void
     }
 
     case 'make_phone_call': {
-      const phone = String(args.phone_number || '').trim();
-      onEvent?.(`TELEPHONY MATRIX: initiating call to ${phone}...`);
-      const res = await deviceControl.callNumber(phone);
+      onEvent?.('TELEPHONY MATRIX: resolving recipient...');
+      const resolution = await resolvePhoneArgs(args, 'call');
+      if (resolution.kind === 'missing') {
+        return { text: 'I need either a phone number or a contact name to call.' };
+      }
+      if (resolution.kind === 'error') {
+        return {
+          text: resolution.message,
+          toolCall: { name: 'device_action', status: 'failed', summary: 'Call: contact lookup failed' },
+        };
+      }
+      onEvent?.(`TELEPHONY MATRIX: initiating call to ${resolution.matchedName || resolution.phoneNumber}...`);
+      const res = await deviceControl.callNumber(resolution.phoneNumber);
       return {
-        text: res.message,
+        text: resolution.matchedName
+          ? res.message.replace(resolution.phoneNumber, `${resolution.matchedName} (${resolution.phoneNumber})`)
+          : res.message,
         toolCall: {
           name: 'device_action',
           status: res.success ? 'completed' : 'failed',
-          summary: `Call: ${phone}`,
+          summary: `Call: ${resolution.matchedName || resolution.phoneNumber}`,
         },
       };
     }
 
     case 'send_sms': {
-      const phone = String(args.phone_number || '').trim();
       const msg = String(args.message || '').trim();
-      onEvent?.(`SMS SUBSYSTEM: dispatching to ${phone}...`);
-      const res = await deviceControl.sendSms(phone, msg);
+      onEvent?.('SMS SUBSYSTEM: resolving recipient...');
+      const resolution = await resolvePhoneArgs(args, 'text');
+      if (resolution.kind === 'missing') {
+        return { text: 'I need either a phone number or a contact name to send an SMS to.' };
+      }
+      if (resolution.kind === 'error') {
+        return {
+          text: resolution.message,
+          toolCall: { name: 'device_action', status: 'failed', summary: 'SMS: contact lookup failed' },
+        };
+      }
+      onEvent?.(`SMS SUBSYSTEM: dispatching to ${resolution.matchedName || resolution.phoneNumber}...`);
+      const res = await deviceControl.sendSms(resolution.phoneNumber, msg);
       return {
         text: res.message,
         toolCall: {
           name: 'device_action',
           status: res.success ? 'completed' : 'failed',
-          summary: `SMS to ${phone}`,
+          summary: `SMS to ${resolution.matchedName || resolution.phoneNumber}`,
         },
       };
     }
 
     case 'open_whatsapp': {
-      const phone = args.phone_number ? String(args.phone_number).trim() : undefined;
       const txt = args.text ? String(args.text).trim() : undefined;
+      onEvent?.('MESSENGER BRIDGE: resolving recipient...');
+      const resolution = await resolvePhoneArgs(args, 'message on WhatsApp');
+      if (resolution.kind === 'error') {
+        return {
+          text: resolution.message,
+          toolCall: { name: 'device_action', status: 'failed', summary: 'WhatsApp: contact lookup failed' },
+        };
+      }
       onEvent?.('MESSENGER BRIDGE: launching WhatsApp...');
+      const phone = resolution.kind === 'resolved' ? resolution.phoneNumber : undefined;
       const res = await deviceControl.openWhatsApp(phone, txt);
       return {
         text: res.message,
@@ -413,6 +537,91 @@ onEvent?: (line: string) => void
           name: 'device_action',
           status: res.success ? 'completed' : 'failed',
           summary: 'WhatsApp dispatch',
+        },
+      };
+    }
+
+    case 'list_calendar_events': {
+      onEvent?.('CALENDAR LINK: reading device agenda...');
+      const startStr = args.start_date ? String(args.start_date).trim() : '';
+      const endStr = args.end_date ? String(args.end_date).trim() : '';
+
+      const start = startStr ? new Date(`${startStr}T00:00:00`) : new Date();
+      start.setHours(0, 0, 0, 0);
+      const end = endStr ? new Date(`${endStr}T23:59:59`) : new Date(start);
+      if (!endStr) end.setHours(23, 59, 59, 999);
+
+      if (Number.isNaN(start.getTime()) || Number.isNaN(end.getTime())) {
+        return { text: 'The date range provided is invalid. Use YYYY-MM-DD format.' };
+      }
+
+      const granted = await calendarService.hasPermission();
+      if (!granted) {
+        const nowGranted = await calendarService.requestPermission();
+        if (!nowGranted) {
+          return {
+            text: "I don't have permission to read your calendar. Grant calendar access in Settings to use this.",
+            toolCall: { name: 'device_action', status: 'failed', summary: 'Calendar permission denied' },
+          };
+        }
+      }
+
+      const events = await calendarService.getEvents(start, end);
+      if (events === null) {
+        return {
+          text: 'I could not read your calendar right now.',
+          toolCall: { name: 'device_action', status: 'failed', summary: 'Calendar read failed' },
+        };
+      }
+      if (events.length === 0) {
+        return {
+          text: 'No events found on your calendar for that period.',
+          toolCall: { name: 'device_action', status: 'completed', summary: 'No events found' },
+        };
+      }
+
+      const lines = events.map((e) => {
+        const time = e.allDay
+          ? 'All day'
+          : `${e.startDate.toLocaleTimeString([], { hour: '2-digit', minute: '2-digit' })} – ${e.endDate.toLocaleTimeString([], { hour: '2-digit', minute: '2-digit' })}`;
+        const loc = e.location ? ` @ ${e.location}` : '';
+        return `- ${e.title} (${time})${loc}`;
+      });
+
+      return {
+        text: `Calendar events:\n${lines.join('\n')}`,
+        toolCall: {
+          name: 'device_action',
+          status: 'completed',
+          summary: `${events.length} calendar event(s) found`,
+          result: events,
+        },
+      };
+    }
+
+    case 'create_calendar_event': {
+      const title = String(args.title || '').trim();
+      const startIso = String(args.start_iso || '').trim();
+      const endIso = args.end_iso ? String(args.end_iso).trim() : '';
+      onEvent?.(`CALENDAR LINK: creating event "${title}"...`);
+
+      const startDate = new Date(startIso);
+      const endDate = endIso ? new Date(endIso) : new Date(startDate.getTime() + 60 * 60 * 1000);
+
+      const res = await calendarService.createEvent({
+        title,
+        startDate,
+        endDate,
+        location: args.location ? String(args.location).trim() : undefined,
+        notes: args.notes ? String(args.notes).trim() : undefined,
+      });
+
+      return {
+        text: res.message,
+        toolCall: {
+          name: 'device_action',
+          status: res.success ? 'completed' : 'failed',
+          summary: `Create event: ${title}`,
         },
       };
     }
