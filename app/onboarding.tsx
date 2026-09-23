@@ -45,6 +45,7 @@ import {
   Sparkles,
   User,
   Volume2,
+  Zap,
 } from 'lucide-react-native';
 
 /**
@@ -123,6 +124,8 @@ const COPY = {
     next: 'CONTINUE',
     launch: 'LAUNCH GIDEON',
     launching: 'IGNITION SEQUENCE…',
+    quickTry: 'TRY IT NOW — SKIP SETUP',
+    quickTryHint: 'Explore the app with the local keyword engine; add real keys anytime in Settings.',
     security: 'Keys are AES-256 encrypted in the hardware keystore and never leave your device unencrypted.',
     bootTitle: 'IGNITION SEQUENCE',
     bootLaunch: 'Launching Gideon core',
@@ -170,6 +173,9 @@ const COPY = {
     next: 'CONTINUER',
     launch: 'LANCER GIDEON',
     launching: 'SÉQUENCE D\u2019ALLUMAGE…',
+    quickTry: 'ESSAYER MAINTENANT — PASSER LA CONFIG',
+    quickTryHint:
+      'Explorez l\u2019app avec le moteur local par mots-clés ; ajoutez de vraies clés plus tard dans les Réglages.',
     security:
       'Les clés sont chiffrées AES-256 dans le keystore matériel et ne quittent jamais l\u2019appareil en clair.',
     bootTitle: 'SÉQUENCE D\u2019ALLUMAGE',
@@ -576,6 +582,37 @@ export default function OnboardingScreen() {
     }
   };
 
+  /**
+   * Fast path for someone who just wants to see the app before typing an
+   * API key anywhere. Saves sane defaults (name, chosen UI language, system
+   * voice) and marks the config as done — every key field stays empty and
+   * can be filled in later from Settings without losing anything, since it
+   * writes through the same `setConfig` the full wizard uses.
+   */
+  const handleQuickTry = async () => {
+    if (launching) return;
+    haptics.medium();
+    try {
+      await setConfig({
+        assistantName: assistantName.trim() || 'Gideon',
+        userName: userName.trim() || 'Commander',
+        language: uiLanguage,
+        voiceEngine: 'system',
+        theme: themeId,
+        themeColor: selectedTheme.color,
+        isConfigured: true,
+      });
+      addTerminalLog(
+        'QUICK TRY: onboarding skipped — running on the local keyword engine. Add keys anytime in Settings.',
+        'info'
+      );
+      router.replace('/');
+    } catch (error) {
+      console.warn('Quick try failed:', error);
+      addTerminalLog('ONBOARDING ERROR: quick try could not be sealed.', 'error');
+    }
+  };
+
   /** Which JARVIS model the wizard should store for a given spoken language. */
   const voiceSelectionFor = (code: string) => {
     const custom = customVoiceId.trim();
@@ -598,6 +635,24 @@ export default function OnboardingScreen() {
           <Text style={[styles.brand, { color: accent }]}>GIDEON</Text>
           <Text style={styles.brandSub}>INITIALIZATION PROTOCOL</Text>
         </View>
+
+        {/* Fast path: the full wizard verifies two API keys before letting
+            anyone in, which is the right default but leaves no way to just
+            look around first. This skips straight to the dashboard on local
+            defaults — nothing here is a dead end, every key field is still
+            reachable from Settings afterwards. */}
+        <TouchableOpacity
+          style={[styles.quickTryBtn, { borderColor: accent + '66' }]}
+          accessibilityLabel={c.quickTry}
+          onPress={handleQuickTry}
+          disabled={launching}
+        >
+          <Zap size={13} color={accent} />
+          <View style={styles.quickTryTextWrap}>
+            <Text style={[styles.quickTryText, { color: accent }]}>{c.quickTry}</Text>
+            <Text style={styles.quickTryHint}>{c.quickTryHint}</Text>
+          </View>
+        </TouchableOpacity>
 
         {/* Progress rail — dots + a fill that tracks the step. */}
         <View style={styles.rail}>
@@ -970,6 +1025,31 @@ const styles = StyleSheet.create({
     fontWeight: '500',
     letterSpacing: 3,
     marginTop: 4,
+  },
+  quickTryBtn: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    gap: 8,
+    borderWidth: 1,
+    borderRadius: 10,
+    paddingHorizontal: 12,
+    paddingVertical: 8,
+    marginBottom: 16,
+    backgroundColor: 'rgba(255,255,255,0.04)',
+  },
+  quickTryTextWrap: { flex: 1 },
+  quickTryText: {
+    fontFamily: FONT.uiMedium,
+    fontSize: 10.5,
+    fontWeight: '800',
+    letterSpacing: 0.6,
+  },
+  quickTryHint: {
+    fontFamily: FONT.ui,
+    color: 'rgba(255,255,255,0.4)',
+    fontSize: 8.5,
+    marginTop: 2,
+    lineHeight: 12,
   },
   rail: {
     flexDirection: 'row',
