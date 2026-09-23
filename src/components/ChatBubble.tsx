@@ -30,6 +30,7 @@ import {
   Smartphone,
   Camera,
   Clock,
+  Brain,
 } from 'lucide-react-native';
 
 interface ChatBubbleProps {
@@ -207,6 +208,7 @@ export const ChatBubble: React.FC<ChatBubbleProps> = ({ message, onAction }) => 
               {message.toolCall.name === 'device_action' && <Smartphone size={14} color="#FBBF24" />}
               {message.toolCall.name === 'vision' && <Camera size={14} color="#00E5FF" />}
               {message.toolCall.name === 'routine' && <Clock size={14} color="#FBBF24" />}
+              {message.toolCall.name === 'memory' && <Brain size={14} color="#00E5FF" />}
 
               <Text style={styles.toolTitle}>
                 {message.toolCall.name === 'dave_build' && 'DAVE AGENT // WEB SYNTHESIS'}
@@ -217,6 +219,7 @@ export const ChatBubble: React.FC<ChatBubbleProps> = ({ message, onAction }) => 
                 {message.toolCall.name === 'device_action' && 'DEVICE MATRIX // NATIVE ACTION'}
                 {message.toolCall.name === 'vision' && 'SEVEN VISION // MULTIMODAL OCULAR'}
                 {message.toolCall.name === 'routine' && 'AUTOMATION ENGINE // ROUTINE'}
+                {message.toolCall.name === 'memory' && 'NEURAL RAG // LONG-TERM MEMORY'}
               </Text>
 
               <View
@@ -301,6 +304,17 @@ export const ChatBubble: React.FC<ChatBubbleProps> = ({ message, onAction }) => 
                 >
                   <Clock size={12} color="#000" />
                   <Text style={styles.actionBtnTextDark}>Manage Routines</Text>
+                </TouchableOpacity>
+              )}
+
+              {message.toolCall.name === 'memory' && (
+                <TouchableOpacity
+                  style={styles.actionBtnGold}
+                  accessibilityLabel="View memory"
+                  onPress={() => onAction?.('open_memory', message.toolCall)}
+                >
+                  <Brain size={12} color="#000" />
+                  <Text style={styles.actionBtnTextDark}>View Memory</Text>
                 </TouchableOpacity>
               )}
             </View>

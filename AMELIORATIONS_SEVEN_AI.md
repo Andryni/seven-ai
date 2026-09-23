@@ -143,6 +143,8 @@ SEVEN dispose désormais d'outils matériels directs grâce au moteur d'appels d
 - **Outils Déclarés** :
   - `remember_fact` : Mémorisation permanente d'une préférence, habitude ou consigne de l'utilisateur.
   - `recall_memories` : Recherche contextuelle dans la mémoire pour enrichir les réponses futures.
+  - `forget_memory` : Efface à la fois les notes libres des Réglages ET tous les faits mémorisés individuellement (les deux mémoires permanentes de l'app).
+- **Écran dédié** : `app/memory.tsx`, accessible depuis le tableau de bord (tuile MÉMOIRE) et depuis la carte d'action « View Memory » du chat quand `remember_fact`/`recall_memories` s'exécutent. Liste, recherche, ajoute, modifie et supprime individuellement chaque fait mémorisé (catégorie fait / préférence / personnel / projet) — auparavant ces faits étaient invisibles et impossibles à corriger ou effacer un par un une fois créés.
 
 ---
 

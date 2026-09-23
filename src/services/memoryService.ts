@@ -126,6 +126,46 @@ class MemoryService {
   }
 
   /**
+   * Update the content/category of an existing fact (used by the Memory
+   * screen's edit action). Returns the updated fact, or null if the id no
+   * longer exists (e.g. deleted from another surface in the meantime).
+   */
+  public async updateFact(
+    id: string,
+    updates: { content?: string; category?: MemoryFact['category'] }
+  ): Promise<MemoryFact | null> {
+    await this.loadFacts();
+    const index = this.facts.findIndex((f) => f.id === id);
+    if (index < 0) return null;
+
+    const content = updates.content !== undefined ? updates.content.trim() : this.facts[index].content;
+    if (!content) return null;
+
+    this.facts[index] = {
+      ...this.facts[index],
+      content,
+      category: updates.category ?? this.facts[index].category,
+      updatedAt: Date.now(),
+    };
+    await this.persist();
+    return this.facts[index];
+  }
+
+  /**
+   * Delete a single remembered fact by id (used by the Memory screen so the
+   * user can remove one wrong/outdated fact without wiping everything).
+   * Returns true if a fact was actually removed.
+   */
+  public async deleteFact(id: string): Promise<boolean> {
+    await this.loadFacts();
+    const before = this.facts.length;
+    this.facts = this.facts.filter((f) => f.id !== id);
+    if (this.facts.length === before) return false;
+    await this.persist();
+    return true;
+  }
+
+  /**
    * Clear all memories
    */
   public async clearMemory(): Promise<void> {

@@ -497,14 +497,22 @@ onEvent?: (line: string) => void
     }
 
     case 'forget_memory': {
-      const hadMemory = !!store.config.memoryNotes?.trim();
+      // Two separate stores make up "permanent memory": the free-text
+      // Settings notes (config.memoryNotes) AND every fact the agent has
+      // individually remembered via remember_fact (memoryService's RAG
+      // store, visible on the Memory screen). Clearing only the former used
+      // to leave every remembered fact behind forever with no way to know
+      // it was still there — "forget everything" has to mean both.
+      const allFacts = await memoryService.getAllFacts();
+      const hadMemory = !!store.config.memoryNotes?.trim() || allFacts.length > 0;
       await store.setConfig({ memoryNotes: '' });
+      await memoryService.clearMemory();
       return {
         text: hadMemory
           ? 'Permanent memory erased. I will treat every future conversation as a fresh start.'
           : 'My permanent memory was already empty — nothing to forget.',
         toolCall: {
-          name: 'self_heal',
+          name: 'memory',
           status: 'completed',
           summary: 'Long-term memory cleared by user request.',
         },

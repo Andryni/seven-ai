@@ -524,6 +524,9 @@ export default function ChatScreen() {
       case 'open_routines':
         router.push('/routines');
         break;
+      case 'open_memory':
+        router.push('/memory');
+        break;
     }
   };
 
