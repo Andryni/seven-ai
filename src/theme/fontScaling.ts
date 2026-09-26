@@ -7,15 +7,15 @@ import React from 'react';
  * `WidgetCanvas`), dock chips, and terminal-style dense layouts start
  * clipping or overlapping well before 2x scale.
  *
- * 1.3 is a middle ground: a "Larger Text" user still gets meaningfully
- * bigger type (30%) for readability, without letting the most extreme OS
+ * 1.6 is a middle ground: a "Larger Text" user still gets meaningfully
+ * bigger type (60%) for readability, without letting the most extreme OS
  * settings (2x-3x) break layouts that assume roughly-fixed text heights.
  * This is a resize *cap*, not a resize *disable* — `allowFontScaling` stays
  * at its default of `true` everywhere, so scaling still applies up to the
  * cap. An explicit `maxFontSizeMultiplier` prop on a call site still wins,
  * and libraries that already pass their own value keep theirs.
  */
-export const MAX_FONT_SIZE_MULTIPLIER = 1.3;
+export const MAX_FONT_SIZE_MULTIPLIER = 1.6;
 
 /**
  * Wraps a text-ish component (`Text`, `TextInput`) so the cap is injected

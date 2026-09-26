@@ -1,15 +1,19 @@
 {
   "name": "seven-ai",
   "main": "index.js",
-  "version": "3.2.0",
+  "version": "3.3.0",
   "scripts": {
     "start": "expo start",
     "android": "expo start --android",
+    "dev:client": "expo start --dev-client",
+    "build:dev:android": "eas build --profile development --platform android",
     "ios": "expo start --ios",
     "web": "expo start --web",
     "test": "jest",
     "lint": "eslint .",
     "typecheck": "tsc --noEmit",
+    "validate": "npm run typecheck && npm run lint && npm test -- --ci --runInBand",
+    "export:web": "expo export --platform web",
     "accept:device": "node scripts/device-acceptance.cjs",
     "postinstall": "node scripts/patch-emc-main.cjs"
   },
@@ -48,6 +52,7 @@
     "expo-status-bar": "~57.0.1",
     "expo-updates": "~57.0.23",
     "expo-web-browser": "~57.0.3",
+    "jszip": "^3.10.2",
     "lucide-react-native": "^1.47.0",
     "react": "19.2.3",
     "react-dom": "19.2.3",

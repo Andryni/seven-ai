@@ -1,3 +1,4 @@
+import { fetchWithTimeout } from './network';
 import { playRemoteAudio, stopPlaybackAudio } from './audioPlayback';
 
 export interface ElevenLabsVoiceOptions {
@@ -25,6 +26,7 @@ class ElevenLabsService {
     options: ElevenLabsVoiceOptions,
     callbacks?: {
       onStart?: () => void;
+      onProgress?: (positionMs: number, durationMs?: number) => void;
       onDone?: () => void;
       onError?: (error: unknown) => void;
     }
@@ -44,7 +46,7 @@ class ElevenLabsService {
     await this.stopAudio();
 
     try {
-      const response = await fetch(`https://api.elevenlabs.io/v1/text-to-speech/${voiceId}`, {
+      const response = await fetchWithTimeout(`https://api.elevenlabs.io/v1/text-to-speech/${voiceId}`, {
         method: 'POST',
         headers: {
           'xi-api-key': apiKey.trim(),
@@ -71,6 +73,7 @@ class ElevenLabsService {
       // returns — that is what keeps the lip-sync in step with the voice.
       return playRemoteAudio(response, 'elevenlabs', {
         onStart: callbacks?.onStart,
+        onProgress: callbacks?.onProgress,
         onDone: callbacks?.onDone,
         onError: callbacks?.onError,
       });

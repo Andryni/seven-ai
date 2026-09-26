@@ -14,7 +14,13 @@ const {
   classifyRatio: (
     ratio: number,
     options: { lowScale: number; highScale: number; cap: number; tolerance?: number }
-  ) => { verdict: string; ratio: number; expected: { capped: number; uncapped: number } };
+  ) => {
+    verdict: string;
+    ratio: number;
+    expected: { capped: number; uncapped: number };
+    toCapped: number;
+    toUncapped: number;
+  };
   expectedRatios: (low: number, high: number, cap: number) => { capped: number; uncapped: number };
   pairTextHeights: (
     low: string,
@@ -26,6 +32,7 @@ const {
     contentDesc: string;
     height: number;
     width: number;
+    bounds: { x1: number; y1: number; x2: number; y2: number } | null;
   }[];
   summarizeRatios: (
     pairs: { ratio: number }[],

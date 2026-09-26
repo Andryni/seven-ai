@@ -1,3 +1,4 @@
+import { fetchWithTimeout } from './network';
 import { useSevenStore } from '../store/useSevenStore';
 
 /**
@@ -22,6 +23,15 @@ export interface LiveWeather {
   /** WMO weather code as reported by Open-Meteo (for the icon). */
   code: number;
   isDay: boolean;
+}
+
+export interface DailyForecast {
+  date: string;
+  minC: number;
+  maxC: number;
+  precipitationChance: number;
+  condition: string;
+  code: number;
 }
 
 export interface LiveNewsItem {
@@ -69,7 +79,7 @@ export async function resolveCity(
     const url = `https://geocoding-api.open-meteo.com/v1/search?name=${encodeURIComponent(
       city
     )}&count=1&language=${language}`;
-    const res = await fetch(url);
+    const res = await fetchWithTimeout(url);
     if (!res.ok) return null;
     const json = await res.json();
     const hit = json?.results?.[0];
@@ -95,7 +105,7 @@ export async function fetchWeather(
     const url =
       `https://api.open-meteo.com/v1/forecast?latitude=${place.latitude}&longitude=${place.longitude}` +
       `&current=temperature_2m,relative_humidity_2m,is_day,weather_code,wind_speed_10m&wind_speed_unit=kmh`;
-    const res = await fetch(url);
+    const res = await fetchWithTimeout(url);
     if (!res.ok) return null;
     const json = await res.json();
     const cur = json?.current;
@@ -115,6 +125,37 @@ export async function fetchWeather(
     };
   } catch {
     return null;
+  }
+}
+
+export async function fetchDailyForecast(
+  city: string,
+  language: 'fr' | 'en'
+): Promise<DailyForecast[]> {
+  const place = await resolveCity(city, language);
+  if (!place) return [];
+  try {
+    const url =
+      `https://api.open-meteo.com/v1/forecast?latitude=${place.latitude}&longitude=${place.longitude}` +
+      '&daily=weather_code,temperature_2m_max,temperature_2m_min,precipitation_probability_max&forecast_days=7';
+    const res = await fetchWithTimeout(url);
+    if (!res.ok) return [];
+    const daily = (await res.json())?.daily;
+    if (!daily?.time) return [];
+    return daily.time.map((date: string, index: number) => {
+      const code = Number(daily.weather_code?.[index] ?? 0);
+      const condition = WEATHER_CODES[code] ?? { fr: 'Conditions variables', en: 'Variable conditions' };
+      return {
+        date,
+        minC: Math.round(daily.temperature_2m_min?.[index] ?? 0),
+        maxC: Math.round(daily.temperature_2m_max?.[index] ?? 0),
+        precipitationChance: Math.round(daily.precipitation_probability_max?.[index] ?? 0),
+        condition: language === 'fr' ? condition.fr : condition.en,
+        code,
+      };
+    });
+  } catch {
+    return [];
   }
 }
 
@@ -186,11 +227,11 @@ export async function fetchNews(
   const feeds = NEWS_FEEDS[language] ?? NEWS_FEEDS.en;
   const settled = await Promise.allSettled(
     feeds.map(async (feed) => {
-      const res = await fetch(feed.url, {
+      const res = await fetchWithTimeout(feed.url, {
         headers: {
           Accept: 'application/rss+xml, application/xml, text/xml, */*',
           // Some publishers (BBC…) answer an empty body to unknown clients.
-          'User-Agent': 'SevenAI/3.2 (Android)',
+          'User-Agent': 'SevenAI/3.3 (Android)',
         },
       });
       if (!res.ok) throw new Error(`HTTP ${res.status}`);

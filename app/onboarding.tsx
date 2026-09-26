@@ -126,7 +126,7 @@ const COPY = {
     launching: 'IGNITION SEQUENCE…',
     quickTry: 'TRY IT NOW — SKIP SETUP',
     quickTryHint: 'Explore the app with the local keyword engine; add real keys anytime in Settings.',
-    security: 'Keys are AES-256 encrypted in the hardware keystore and never leave your device unencrypted.',
+    security: 'On Android/iOS, keys use the system secure store and are sent only to the selected provider over HTTPS. Web storage is less protected.',
     bootTitle: 'IGNITION SEQUENCE',
     bootLaunch: 'Launching Gideon core',
     bootHandshake: 'Handshaking with the neural core',
@@ -177,7 +177,7 @@ const COPY = {
     quickTryHint:
       'Explorez l\u2019app avec le moteur local par mots-clés ; ajoutez de vraies clés plus tard dans les Réglages.',
     security:
-      'Les clés sont chiffrées AES-256 dans le keystore matériel et ne quittent jamais l\u2019appareil en clair.',
+      'Sur Android/iOS, les clés utilisent le coffre sécurisé du système et sont envoyées uniquement au fournisseur choisi via HTTPS. Le stockage Web est moins protégé.',
     bootTitle: 'SÉQUENCE D\u2019ALLUMAGE',
     bootLaunch: 'Lancement du cœur Gideon',
     bootHandshake: 'Poignée de main avec le cœur neural',

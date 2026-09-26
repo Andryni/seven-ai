@@ -11,9 +11,16 @@ jest.mock('expo-notifications', () => ({
   setNotificationHandler: (...args: unknown[]) => mockSetNotificationHandler(...args),
 }));
 
-function loadModule(platform: string) {
+function loadModule(platform: string, appOwnership: string | null = null) {
   jest.resetModules();
   jest.doMock('react-native', () => ({ Platform: { OS: platform } }));
+  jest.doMock('expo-constants', () => ({
+    __esModule: true,
+    default: {
+      appOwnership,
+      executionEnvironment: appOwnership === 'expo' ? 'storeClient' : 'standalone',
+    },
+  }));
   // eslint-disable-next-line @typescript-eslint/no-require-imports
   return require('../src/services/notificationPresentation') as typeof import('../src/services/notificationPresentation');
 }
@@ -48,6 +55,12 @@ describe('installNotificationHandler', () => {
 
   it('does nothing on web, which has no notification handler', () => {
     const { installNotificationHandler } = loadModule('web');
+    installNotificationHandler();
+    expect(mockSetNotificationHandler).not.toHaveBeenCalled();
+  });
+
+  it('does not evaluate expo-notifications inside Expo Go', () => {
+    const { installNotificationHandler } = loadModule('android', 'expo');
     installNotificationHandler();
     expect(mockSetNotificationHandler).not.toHaveBeenCalled();
   });

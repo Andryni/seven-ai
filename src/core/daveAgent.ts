@@ -170,6 +170,7 @@ Output MUST be a single valid JSON object with EXACTLY these 3 keys:
       files,
       folderPath: projectDir,
       previewHtml: files['index.html'],
+      versions: [{ id: `v-${Date.now()}`, timestamp: Date.now(), label: 'Initial build', files: { ...files } }],
     };
 
     store.addDaveProject(projectRecord);
@@ -239,11 +240,16 @@ Apply ONLY the requested change, keeping everything else intact and consistent. 
         });
       }
 
+      const now = Date.now();
       const updates: Partial<DaveProject> = {
         files,
         previewHtml: files['index.html'],
         prompt: `${project.prompt} | ${instruction}`,
-        timestamp: Date.now(),
+        timestamp: now,
+        versions: [
+          { id: `v-${now}`, timestamp: now, label: instruction.slice(0, 60), files: { ...files } },
+          ...(project.versions || [{ id: `v-${project.timestamp}`, timestamp: project.timestamp, label: 'Imported baseline', files: { ...project.files } }]),
+        ].slice(0, 20),
       };
 
       store.updateDaveProject(project.id, updates);
@@ -259,6 +265,74 @@ Apply ONLY the requested change, keeping everything else intact and consistent. 
     }
   }
 
+  public async saveProjectFiles(
+    project: DaveProject,
+    files: DaveProject['files'],
+    label = 'Manual edit'
+  ): Promise<DaveProject> {
+    for (const [name, content] of Object.entries(files)) {
+      await storageService.writeAsString(`${project.folderPath}${name}`, content);
+    }
+    const now = Date.now();
+    const updated: DaveProject = {
+      ...project,
+      files,
+      previewHtml: files['index.html'],
+      timestamp: now,
+      versions: [
+        { id: `v-${now}`, timestamp: now, label, files: { ...files } },
+        ...(project.versions || []),
+      ].slice(0, 20),
+    };
+    useSevenStore.getState().updateDaveProject(project.id, updated);
+    return updated;
+  }
+
+  public async restoreVersion(project: DaveProject, versionId: string): Promise<DaveProject> {
+    const version = project.versions?.find((item) => item.id === versionId);
+    if (!version) throw new Error('Project version not found.');
+    const files = version.files as DaveProject['files'];
+    return this.saveProjectFiles(project, files, `Restored ${version.label}`);
+  }
+
+  public runProjectTests(project: DaveProject): NonNullable<DaveProject['lastTestReport']> {
+    const html = project.files['index.html'] || '';
+    const css = project.files['style.css'] || '';
+    const js = project.files['script.js'] || '';
+    const checks = [
+      { name: 'HTML document', ok: /<html[\s>]/i.test(html) && /<\/html>/i.test(html), detail: 'Opening and closing HTML root' },
+      { name: 'Stylesheet link', ok: /style\.css/i.test(html), detail: 'index.html references style.css' },
+      { name: 'Script link', ok: /script\.js/i.test(html), detail: 'index.html references script.js' },
+      { name: 'Responsive viewport', ok: /name=["']viewport["']/i.test(html), detail: 'Mobile viewport metadata' },
+      { name: 'CSS payload', ok: css.trim().length > 100, detail: `${css.length} CSS characters` },
+      { name: 'JavaScript syntax shape', ok: (js.match(/{/g)?.length || 0) === (js.match(/}/g)?.length || 0), detail: 'Balanced block braces' },
+    ];
+    const report = {
+      passed: checks.filter((check) => check.ok).length,
+      failed: checks.filter((check) => !check.ok).length,
+      checks,
+      timestamp: Date.now(),
+    };
+    useSevenStore.getState().updateDaveProject(project.id, { lastTestReport: report });
+    useSevenStore.getState().addTerminalLog(`TESTS: ${report.passed} passed / ${report.failed} failed`, report.failed ? 'warn' : 'success');
+    return report;
+  }
+
+  public diffVersions(project: DaveProject, olderId: string, newerId: string): { file: string; added: number; removed: number }[] {
+    const older = project.versions?.find((version) => version.id === olderId);
+    const newer = project.versions?.find((version) => version.id === newerId);
+    if (!older || !newer) return [];
+    const names = new Set([...Object.keys(older.files), ...Object.keys(newer.files)]);
+    return [...names].map((file) => {
+      const before = new Set((older.files[file] || '').split('\n'));
+      const after = new Set((newer.files[file] || '').split('\n'));
+      return {
+        file,
+        added: [...after].filter((line) => !before.has(line)).length,
+        removed: [...before].filter((line) => !after.has(line)).length,
+      };
+    });
+  }
 }
 
 export const daveAgent = DaveAgentService.getInstance();

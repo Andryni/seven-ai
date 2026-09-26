@@ -57,6 +57,18 @@ describe('memoryService', () => {
       expect(all).toHaveLength(1);
     });
 
+    it('creates bidirectional semantic relations and cleans them on deletion', async () => {
+      const first = await memoryService.rememberFact('React project uses TypeScript components', 'project');
+      const second = await memoryService.rememberFact('TypeScript project uses React hooks', 'project');
+      let all = await memoryService.getAllFacts();
+      expect(all.find((fact) => fact.id === first.id)?.relatedIds).toContain(second.id);
+      expect(second.relatedIds).toContain(first.id);
+
+      await memoryService.deleteFact(second.id);
+      all = await memoryService.getAllFacts();
+      expect(all[0].relatedIds).not.toContain(second.id);
+    });
+
     it('actually survives being reloaded from disk (real persistence, not just in-memory)', async () => {
       await memoryService.rememberFact('Persisted fact');
       // Simulate a fresh service instance reading the same file.

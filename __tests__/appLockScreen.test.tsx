@@ -23,9 +23,10 @@ describe('AppLockScreen', () => {
     expect(await findByText(/try again/i)).toBeTruthy();
   });
 
-  it('shows no failure message while awaiting the very first attempt', () => {
+  it('shows no failure message while awaiting the very first attempt', async () => {
     const onUnlock = jest.fn(() => new Promise<boolean>(() => {}));
     const { queryByText } = render(<AppLockScreen onUnlock={onUnlock} language="en" />);
+    await waitFor(() => expect(onUnlock).toHaveBeenCalledTimes(1));
     expect(queryByText(/try again/i)).toBeNull();
   });
 
@@ -45,5 +46,6 @@ describe('AppLockScreen', () => {
     const onUnlock = jest.fn().mockResolvedValue(true);
     const { findByText } = render(<AppLockScreen onUnlock={onUnlock} language="fr" />);
     expect(await findByText('SEVEN VERROUILLÉ')).toBeTruthy();
+    await waitFor(() => expect(onUnlock).toHaveBeenCalledTimes(1));
   });
 });

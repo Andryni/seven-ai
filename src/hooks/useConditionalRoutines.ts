@@ -2,7 +2,7 @@ import { useEffect } from 'react';
 import { Platform, AppState, type AppStateStatus } from 'react-native';
 import * as Battery from 'expo-battery';
 import NetInfo from '@react-native-community/netinfo';
-import * as Notifications from 'expo-notifications';
+import { getNotificationsModule } from '../services/notificationsAdapter';
 import { useSevenStore } from '../store/useSevenStore';
 import { calendarService } from '../services/calendarService';
 import { routineService } from '../services/routineService';
@@ -142,7 +142,8 @@ export function useConditionalRoutines(): void {
       store.addTerminalLog(`ROUTINE (${routine.name}): ${outcome}`, 'success');
       try {
         const granted = await routineService.ensurePermissionsAsync();
-        if (!granted) return;
+        const notifications = getNotificationsModule();
+        if (!granted || !notifications) return;
         const title =
           language === 'fr' ? `SEVEN // ${routine.name}` : `SEVEN // ${routine.name}`;
         const body = eventTitle
@@ -150,7 +151,7 @@ export function useConditionalRoutines(): void {
             ? `"${eventTitle}" commence bientôt.`
             : `"${eventTitle}" starts soon.`
           : outcome;
-        await Notifications.scheduleNotificationAsync({
+        await notifications.scheduleNotificationAsync({
           content: {
             title,
             body,

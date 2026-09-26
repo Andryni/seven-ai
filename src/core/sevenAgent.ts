@@ -516,7 +516,13 @@ ${notes}`;
     const config = store.config;
 
     store.setStatus('thinking');
-    store.addTerminalLog(`USER PROMPT: "${userPrompt || (image ? '[Image Analysis]' : '')}"`, 'cmd');
+    const attachmentKind = image?.mimeType === 'application/pdf' ? 'document' : 'image';
+    // Terminal logs are persisted and exportable: never duplicate prompts,
+    // document contents, contact details or voice transcripts into them.
+    store.addTerminalLog(
+      image ? `USER REQUEST RECEIVED [${attachmentKind.toUpperCase()} ATTACHED]` : 'USER REQUEST RECEIVED',
+      'cmd'
+    );
 
     // --- Brain telemetry (see brainTelemetry.ts) ---
     // Recorded as soon as the turn's first remote output lands — the HUD should
@@ -553,7 +559,7 @@ ${notes}`;
       if (!config.geminiApiKey || config.geminiApiKey.trim().length <= 5) {
         if (image) {
           const res = {
-            text: 'Vision / Image analysis requires a Gemini API key. Configure your API key in Settings.',
+            text: 'Image and PDF analysis requires a Gemini API key. Configure your API key in Settings.',
             toolCall: {
               name: 'vision' as const,
               status: 'failed' as const,
@@ -601,7 +607,10 @@ ${notes}`;
             parts: [{ text: userPrompt || 'Analyze and describe what is visible in this image in detail.' }, imagePart],
           });
         }
-        store.addTerminalLog('OCULAR SUBSYSTEM: Multimodal image attached to Gemini payload', 'info');
+        store.addTerminalLog(
+          `${attachmentKind === 'document' ? 'DOCUMENT' : 'OCULAR'} SUBSYSTEM: multimodal attachment added to Gemini payload`,
+          'info'
+        );
       }
 
       // ---- Pass 1: real token-level streaming, with a fallback to a
@@ -664,7 +673,13 @@ ${notes}`;
         store.addTerminalLog('Gemini response received [200 OK]', 'success');
         return {
           text: fullText,
-          toolCall: image ? { name: 'vision', status: 'completed', summary: 'Ocular analysis completed' } : undefined,
+          toolCall: image
+            ? {
+                name: 'vision',
+                status: 'completed',
+                summary: attachmentKind === 'document' ? 'Document analysis completed' : 'Image analysis completed',
+              }
+            : undefined,
         };
       }
 
