@@ -1,6 +1,7 @@
 import { create } from 'zustand';
 import * as SecureStore from 'expo-secure-store';
 import { Platform } from 'react-native';
+import { secretConfigService, withoutSecrets } from '../services/secretConfigService';
 // SDK 57: the classic callback-style API moved to the 'legacy' subpath.
 import * as FileSystem from 'expo-file-system/legacy';
 import type { BrainTurnTelemetry } from '../core/brainTelemetry';
@@ -20,6 +21,7 @@ import {
 } from '../types';
 import { JARVIS_VOICE_MODELS, fishVoiceFor } from '../services/fishAudioService';
 import { formatClockTimeWithSeconds } from '../core/datetime';
+import { memoryService } from '../services/memoryService';
 
 /** Timestamp for terminal-log lines, in the UI language. The three boot logs
  *  below are created at module evaluation — before the store exists and
@@ -58,6 +60,8 @@ interface SevenState {
 
   // Actions
   setConfig: (config: Partial<AssistantConfig>) => Promise<void>;
+  switchSecurityProfile: (profile: 'personal' | 'work' | 'guest') => Promise<void>;
+  importPortableSnapshot: (snapshot: { chatSessions?: ChatSession[]; routines?: AutomationRoutine[]; projects?: DaveProject[]; research?: ResearchDocument[] }) => void;
   loadSavedConfig: () => Promise<void>;
   setStatus: (status: AssistantStatus) => void;
   setAudioAmplitude: (amp: number) => void;
@@ -108,6 +112,7 @@ const defaultConfig: AssistantConfig = {
   city: 'Antananarivo',
   geminiApiKey: '',
   openRouterKey: '',
+  braveSearchApiKey: '',
   googleClientId: '',
   themeColor: '#00E5FF',
   theme: 'seven',
@@ -131,11 +136,37 @@ const defaultConfig: AssistantConfig = {
   elevenLabsApiKey: '',
   elevenLabsVoiceId: 'EXAVITQu4vr4xnSDxMaL', // Default Rachel / Clear voice
   avatarStyle: 'gideon',
+  widgetLayoutVersion: 0,
   wakeWordEnabled: false,
   gyroEnabled: true,
+  avatarQuality: 'balanced',
+  adaptivePerformanceEnabled: true,
+  autonomousBackgroundEnabled: false,
+  proactiveIntelligenceEnabled: true,
+  activeSecurityProfile: 'personal',
+  localInferenceEnabled: false,
+  localModelEndpoint: '',
+  localModelName: 'local-model',
+  syncEnabled: false,
+  syncEndpoint: '',
+  githubRepository: '',
+  syncToken: '',
+  syncEncryptionKey: '',
+  githubToken: '',
+  localModelToken: '',
+  avatarParallaxIntensity: 1,
+  avatarExpressionIntensity: 1,
+  avatarMouthIntensity: 1,
+  avatarGazeEnabled: true,
   showIconLabels: false,
   reduceMotion: 'auto',
   appLockEnabled: false,
+  privacyProfile: 'balanced',
+  cloudTextEnabled: true,
+  cloudAudioEnabled: true,
+  cloudVisionEnabled: true,
+  cloudDocumentsEnabled: true,
+  cloudJournalEnabled: true,
   isConfigured: false,
 };
 
@@ -164,7 +195,7 @@ const initialChatHistory: ChatMessage[] = [
     text: 'Systems online. Seven AI neural core active. All orbital HUD rings calibrated. What is your command, Commander?',
     timestamp: Date.now() - 60000,
     terminalLogs: [
-      'INIT: Seven AI Neural Core v3.1.0',
+      'INIT: Seven AI Neural Core v3.3.0',
       'SYSTEM: Calibrating Orbital HUD Array [OK]',
       'AUDIO: Neural speech synthesizer & multi-lang DSP online [OK]',
       'STORAGE: SAF & Document Sandbox mounted [OK]',
@@ -194,6 +225,14 @@ const initialTerminalLogs: TerminalLogEntry[] = [
 ];
 
 const WEB_STORAGE_PREFIX = 'SEVEN_STATE_V3_';
+const MAX_CHAT_MESSAGES = 300;
+const MAX_CHAT_SESSIONS = 100;
+const MAX_AUTOMATION_ROUTINES = 100;
+
+/** Browser localStorage is readable by any script running in the same origin;
+ * API secrets must remain session-only on Web. Mobile persists the full config
+ * through the OS secure store. */
+const webSafeConfig = withoutSecrets;
 
 const persistTimers: Record<string, ReturnType<typeof setTimeout>> = {};
 function persistSlice(name: string, data: unknown, debounceMs = 0) {
@@ -301,14 +340,84 @@ export const useSevenStore = create<SevenState>((set, get) => ({
     try {
       if (Platform.OS === 'web') {
         if (typeof window !== 'undefined' && window.localStorage) {
-          window.localStorage.setItem('seven_config_web', JSON.stringify(updated));
+          window.localStorage.setItem('seven_config_web', JSON.stringify(webSafeConfig(updated)));
         }
       } else {
-        await SecureStore.setItemAsync(SECURE_STORE_KEY, JSON.stringify(updated));
+        // Credentials get one SecureStore entry each; preferences remain in a
+        // separate sanitized blob. Only changed credential fields are sent to
+        // SecureStore. In particular, saving unrelated preferences after a
+        // failed credential read cannot accidentally delete an existing key.
+        const changedSecrets = Object.fromEntries(
+          (['geminiApiKey', 'openRouterKey', 'braveSearchApiKey', 'fishAudioApiKey', 'elevenLabsApiKey', 'syncToken', 'syncEncryptionKey', 'githubToken', 'localModelToken'] as const)
+            .filter((key) => Object.prototype.hasOwnProperty.call(updates, key) && updates[key] !== current[key])
+            .map((key) => [key, updates[key]])
+        ) as Partial<AssistantConfig>;
+        await secretConfigService.saveUpdates(changedSecrets);
+        await SecureStore.setItemAsync(SECURE_STORE_KEY, JSON.stringify(withoutSecrets(updated)));
       }
     } catch (e) {
       console.warn('Failed to save config to SecureStore:', e);
     }
+  },
+
+  switchSecurityProfile: async (profile) => {
+    const state = get();
+    const currentProfile = state.config.activeSecurityProfile || 'personal';
+    const snapshot = {
+      chatHistory: state.chatHistory,
+      chatSessions: state.chatSessions,
+      activeChatSessionId: state.activeChatSessionId,
+      automationRoutines: state.automationRoutines,
+      daveProjects: state.daveProjects,
+      researchDocs: state.researchDocs,
+      memoryNotes: state.config.memoryNotes || '',
+      memory: await memoryService.getAllFacts(),
+    };
+    const key = (id: string) => `security_profile_${id}`;
+    if (Platform.OS === 'web') {
+      window.localStorage?.setItem(WEB_STORAGE_PREFIX + key(currentProfile), JSON.stringify(snapshot));
+    } else if (DATA_DIR) {
+      await FileSystem.makeDirectoryAsync(DATA_DIR, { intermediates: true }).catch(() => {});
+      await FileSystem.writeAsStringAsync(getSlicePath(key(currentProfile)), JSON.stringify(snapshot));
+    }
+    const empty = { chatHistory: initialChatHistory, chatSessions: [], activeChatSessionId: null, automationRoutines: [], daveProjects: [], researchDocs: [], memoryNotes: '', memory: [] };
+    let target = empty;
+    try {
+      if (Platform.OS === 'web') {
+        const raw = window.localStorage?.getItem(WEB_STORAGE_PREFIX + key(profile));
+        if (raw) target = { ...empty, ...JSON.parse(raw) };
+      } else {
+        target = { ...empty, ...(await readPersistedSlice(key(profile), empty)) };
+      }
+    } catch { target = empty; }
+    set({
+      chatHistory: target.chatHistory,
+      chatSessions: target.chatSessions,
+      activeChatSessionId: target.activeChatSessionId,
+      automationRoutines: target.automationRoutines,
+      daveProjects: target.daveProjects,
+      activeDaveProject: target.daveProjects[0] || null,
+      researchDocs: target.researchDocs,
+    });
+    await memoryService.importFacts(target.memory);
+    await get().setConfig({ activeSecurityProfile: profile, memoryNotes: target.memoryNotes });
+    persistSlice('chatHistory', target.chatHistory, 0);
+    persistSlice('chatSessions', target.chatSessions, 0);
+    persistSlice('automationRoutines', target.automationRoutines, 0);
+    persistSlice('daveProjects', target.daveProjects, 0);
+    persistSlice('researchDocs', target.researchDocs, 0);
+  },
+
+  importPortableSnapshot: (snapshot) => {
+    const chatSessions = Array.isArray(snapshot.chatSessions) ? snapshot.chatSessions.slice(0, MAX_CHAT_SESSIONS) : get().chatSessions;
+    const automationRoutines = Array.isArray(snapshot.routines) ? snapshot.routines : get().automationRoutines;
+    const daveProjects = Array.isArray(snapshot.projects) ? snapshot.projects.slice(0, 30) : get().daveProjects;
+    const researchDocs = Array.isArray(snapshot.research) ? snapshot.research : get().researchDocs;
+    set({ chatSessions, automationRoutines, daveProjects, activeDaveProject: daveProjects[0] || null, researchDocs });
+    persistSlice('chatSessions', chatSessions, 0);
+    persistSlice('automationRoutines', automationRoutines, 0);
+    persistSlice('daveProjects', daveProjects, 0);
+    persistSlice('researchDocs', researchDocs, 0);
   },
 
   loadSavedConfig: async () => {
@@ -322,8 +431,25 @@ export const useSevenStore = create<SevenState>((set, get) => ({
         saved = await SecureStore.getItemAsync(SECURE_STORE_KEY);
       }
 
-      const parsedConfig = saved ? JSON.parse(saved) : {};
-      const config = { ...defaultConfig, ...parsedConfig };
+      let parsedConfig = saved ? JSON.parse(saved) : {};
+      let secrets: Partial<AssistantConfig> = {};
+      if (Platform.OS === 'web') {
+        // Migration: remove keys written by older builds and never hydrate them
+        // back into memory from an XSS-readable persistence layer.
+        parsedConfig = webSafeConfig({ ...defaultConfig, ...parsedConfig });
+        if (typeof window !== 'undefined' && window.localStorage) {
+          window.localStorage.setItem('seven_config_web', JSON.stringify(parsedConfig));
+        }
+      } else {
+        // Older versions stored credentials inside the complete config JSON.
+        // Move them into dedicated entries, then immediately rewrite the blob
+        // without secrets before hydrating the runtime config.
+        await secretConfigService.migrateLegacy(parsedConfig);
+        secrets = await secretConfigService.load();
+        parsedConfig = withoutSecrets({ ...defaultConfig, ...parsedConfig });
+        await SecureStore.setItemAsync(SECURE_STORE_KEY, JSON.stringify(parsedConfig));
+      }
+      const config = { ...defaultConfig, ...parsedConfig, ...secrets };
 
       // Migration: Gideon replaced the original orb engines, so configs saved
       // with 'vector' / 'shader' are silently upgraded instead of leaving the
@@ -364,20 +490,25 @@ export const useSevenStore = create<SevenState>((set, get) => ({
           m.sender === 'system' ||
           m.text.replace(/\u27e8[^\u27e9]*\u27e9/g, '').trim().length > 0
       );
-      const finalHistory =
-        sanitizedHistory.length > 0 ? sanitizedHistory : initialChatHistory;
+      const finalHistory = (
+        sanitizedHistory.length > 0 ? sanitizedHistory : initialChatHistory
+      ).slice(-MAX_CHAT_MESSAGES);
+      const boundedSessions = chatSessions.slice(0, MAX_CHAT_SESSIONS).map((session) => ({
+        ...session,
+        messages: session.messages.slice(-MAX_CHAT_MESSAGES),
+      }));
 
       set({
         config,
         chatHistory: finalHistory,
-        chatSessions,
+        chatSessions: boundedSessions,
         activeChatSessionId,
         terminalLogs: terminalLogs.length > 0 ? terminalLogs : initialTerminalLogs,
         daveProjects,
         activeDaveProject: activeDave,
         patchLogs,
         researchDocs,
-        automationRoutines,
+        automationRoutines: automationRoutines.slice(0, MAX_AUTOMATION_ROUTINES),
         isInitialized: true,
       });
     } catch (e) {
@@ -398,7 +529,7 @@ export const useSevenStore = create<SevenState>((set, get) => ({
     };
 
     set((state) => {
-      const chatHistory = [...state.chatHistory, newMessage];
+      const chatHistory = [...state.chatHistory, newMessage].slice(-MAX_CHAT_MESSAGES);
       persistSlice('chatHistory', chatHistory, 800);
 
       const activeId = state.activeChatSessionId;
@@ -416,7 +547,7 @@ export const useSevenStore = create<SevenState>((set, get) => ({
             updatedAt: Date.now(),
             messages: chatHistory,
           };
-          chatSessions = [newSession, ...chatSessions];
+          chatSessions = [newSession, ...chatSessions].slice(0, MAX_CHAT_SESSIONS);
           newActiveId = sid;
           persistSlice('chatSessions', chatSessions);
           persistSlice('activeChatSessionId', newActiveId);
@@ -500,7 +631,7 @@ export const useSevenStore = create<SevenState>((set, get) => ({
           updatedAt: Date.now(),
           messages: chatHistory,
         };
-        updatedSessions = [session, ...chatSessions];
+        updatedSessions = [session, ...chatSessions].slice(0, MAX_CHAT_SESSIONS);
       }
     }
     persistSlice('chatSessions', updatedSessions);
@@ -653,7 +784,7 @@ export const useSevenStore = create<SevenState>((set, get) => ({
       const automationRoutines = [
         routine,
         ...state.automationRoutines.filter((r) => r.id !== routine.id),
-      ];
+      ].slice(0, MAX_AUTOMATION_ROUTINES);
       persistSlice('automationRoutines', automationRoutines);
       return { automationRoutines };
     }),

@@ -1,5 +1,4 @@
-import { Platform } from 'react-native';
-import * as Notifications from 'expo-notifications';
+import { getNotificationsModule } from './notificationsAdapter';
 
 /**
  * Foreground presentation policy for OS notifications.
@@ -18,12 +17,12 @@ let installed = false;
 
 /** Idempotent: installing the handler twice would only reset the same policy. */
 export function installNotificationHandler(): void {
-  // Web has no notification handler; calling it there would only add a
-  // native-module warning to the console.
-  if (Platform.OS === 'web' || installed) return;
+  if (installed) return;
+  const notifications = getNotificationsModule();
+  if (!notifications) return;
   installed = true;
 
-  Notifications.setNotificationHandler({
+  notifications.setNotificationHandler({
     handleNotification: async () => ({
       shouldShowBanner: true,
       shouldShowList: true,

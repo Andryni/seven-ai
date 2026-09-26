@@ -1,4 +1,4 @@
-import React, { useEffect, useMemo, useState } from 'react';
+import React, { useCallback, useEffect, useMemo, useRef, useState } from 'react';
 import { View, Text, Animated, Easing, Dimensions } from 'react-native';
 import Svg, { Circle, Defs, RadialGradient, Stop } from 'react-native-svg';
 import { useTheme, useThemeStyles } from '../theme/theme';
@@ -9,7 +9,7 @@ import { useReducedMotion } from '../hooks/useReducedMotion';
 const { width: SCREEN_WIDTH } = Dimensions.get('window');
 
 const BOOT_LINES = [
-  'SEVEN_OS // KERNEL v3.2 BOOTING...',
+  'SEVEN_OS // KERNEL v3.3 BOOTING...',
   'NEURAL CORE ................. ONLINE',
   'ORBITAL HUD ARRAY ........... CALIBRATED',
   'AUDIO DSP MULTILANG ......... READY',
@@ -37,6 +37,12 @@ export const LaunchSplash: React.FC<LaunchSplashProps> = ({ onFinish }) => {
   const ringSpin = useMemo(() => new Animated.Value(0), []);
   const barFill = useMemo(() => new Animated.Value(0), []);
   const [step, setStep] = useState(0);
+  const finishedRef = useRef(false);
+  const finish = useCallback(() => {
+    if (finishedRef.current) return;
+    finishedRef.current = true;
+    onFinish();
+  }, [onFinish]);
   // The boot log and progress fill communicate real state (the app is
   // loading) and always run; the continuous dual-ring spin is pure
   // flourish and is the only thing dropped here under reduce-motion.
@@ -93,12 +99,19 @@ export const LaunchSplash: React.FC<LaunchSplashProps> = ({ onFinish }) => {
         delay: 120,
         easing: Easing.in(Easing.quad),
         useNativeDriver: true,
-      }).start(() => onFinish());
+      }).start(finish);
     }, 2500);
+
+    // Native animation completion callbacks can be dropped when Expo Go is
+    // briefly backgrounded or the JS thread stalls during its first bundle.
+    // This independent deadline guarantees the full-screen splash can never
+    // remain above the dashboard and swallow navigation touches indefinitely.
+    const hardDeadline = setTimeout(finish, 3400);
 
     return () => {
       clearInterval(stepTimer);
       clearTimeout(exitTimer);
+      clearTimeout(hardDeadline);
       spinLoop?.stop();
     };
     // eslint-disable-next-line react-hooks/exhaustive-deps
@@ -120,6 +133,8 @@ export const LaunchSplash: React.FC<LaunchSplashProps> = ({ onFinish }) => {
   return (
     <Animated.View
       style={[styles.container, { opacity: containerOpacity, backgroundColor: palette.bgDeep }]}
+      onTouchEnd={finish}
+      accessibilityLabel="SEVEN boot sequence. Tap to skip."
     >
       {/* Ambient radial glow */}
       <View style={styles.glowAbs} pointerEvents="none">
@@ -199,7 +214,7 @@ export const LaunchSplash: React.FC<LaunchSplashProps> = ({ onFinish }) => {
         <Animated.View style={[styles.progressFill, { width: barWidth }]} />
       </View>
 
-      <Text style={styles.footerText}>SEVEN_OS // KERNEL v3.2</Text>
+      <Text style={styles.footerText}>SEVEN_OS // KERNEL v3.3</Text>
     </Animated.View>
   );
 };

@@ -35,6 +35,8 @@ import {
   Briefcase,
   Lightbulb,
   AlertTriangle,
+  Link2,
+  ShieldCheck,
 } from 'lucide-react-native';
 
 const CATEGORIES: MemoryFact['category'][] = ['fact', 'preference', 'personal', 'project'];
@@ -216,6 +218,21 @@ export default function MemoryScreen() {
         ListHeaderComponent={
           <ScreenReveal index={1}>
             <Text style={styles.subtitle}>{t('memory.subtitle', lang)}</Text>
+            <View style={styles.cognitiveMap}>
+              <View style={styles.memoryCore}><Brain size={24} color={palette.accent} /><Text style={styles.memoryCoreCount}>{facts.length}</Text></View>
+              {CATEGORIES.map((category, index) => {
+                const count = facts.filter((fact) => fact.category === category).length;
+                return (
+                  <View key={category} style={[styles.memoryNode, [styles.memoryNode0, styles.memoryNode1, styles.memoryNode2, styles.memoryNode3][index]]}>
+                    {categoryIcon(category, palette.accent, 12)}
+                    <Text style={styles.memoryNodeLabel}>{category.toUpperCase()}</Text>
+                    <Text style={styles.memoryNodeCount}>{count}</Text>
+                  </View>
+                );
+              })}
+              <View style={[styles.memoryLink, styles.memoryLinkH]} />
+              <View style={[styles.memoryLink, styles.memoryLinkV]} />
+            </View>
             <View style={styles.searchRow}>
               <Search size={13} color={palette.textFaint} />
               <TextInput
@@ -276,6 +293,20 @@ export default function MemoryScreen() {
                     <Text style={styles.cardMeta}>
                       {t('memory.updatedAt', lang)}: {new Date(item.updatedAt).toLocaleDateString()}
                     </Text>
+                  </View>
+                  <View style={styles.cognitiveMeta}>
+                    <View style={styles.cognitivePill}><ShieldCheck size={9} color={palette.success} /><Text style={styles.cognitivePillText}>{Math.round((item.confidence ?? 1) * 100)}% CONF</Text></View>
+                    <View style={styles.cognitivePill}><Text style={styles.cognitivePillText}>IMP {Math.round((item.importance ?? .6) * 100)}</Text></View>
+                    <View style={styles.cognitivePill}><Text style={styles.cognitivePillText}>{(item.source || 'user').toUpperCase()}</Text></View>
+                    <TouchableOpacity
+                      style={styles.cognitivePill}
+                      onPress={() => {
+                        const related = new Set(item.relatedIds || []);
+                        setQuery(related.size ? facts.filter((fact) => related.has(fact.id)).map((fact) => fact.content.split(' ')[0]).join(' ') : item.content.split(' ')[0]);
+                      }}
+                    >
+                      <Link2 size={9} color={palette.accent} /><Text style={styles.cognitivePillText}>{item.relatedIds?.length || 0} LINKS</Text>
+                    </TouchableOpacity>
                   </View>
                 </View>
               </View>
@@ -465,6 +496,16 @@ const memoryStyles = (t: Palette) => ({
   scrollArea: { flex: 1 },
   scrollContent: { paddingHorizontal: 12, paddingTop: 12, paddingBottom: 40 },
   subtitle: { fontFamily: FONT.mono, color: t.textDim, fontSize: 10, lineHeight: 14, marginBottom: 12 },
+  cognitiveMap: { height: 190, marginBottom: 12, borderWidth: 1, borderColor: t.borderStrong, borderRadius: 10, backgroundColor: 'rgba(3,9,18,.92)', position: 'relative', alignItems: 'center', justifyContent: 'center', overflow: 'hidden' },
+  memoryCore: { width: 72, height: 72, borderRadius: 36, borderWidth: 1, borderColor: t.accent, backgroundColor: t.accentSoft, alignItems: 'center', justifyContent: 'center', zIndex: 3 },
+  memoryCoreCount: { color: t.text, fontFamily: FONT.display, fontSize: 12, marginTop: 2 },
+  memoryNode: { position: 'absolute', width: 72, minHeight: 46, borderWidth: 1, borderColor: t.border, borderRadius: 7, backgroundColor: t.bgDeep, alignItems: 'center', justifyContent: 'center', zIndex: 2 },
+  memoryNode0: { left: 10, top: 15 }, memoryNode1: { right: 10, top: 15 }, memoryNode2: { left: 10, bottom: 15 }, memoryNode3: { right: 10, bottom: 15 },
+  memoryNodeLabel: { color: t.textDim, fontFamily: FONT.mono, fontSize: 5.8, marginTop: 2 },
+  memoryNodeCount: { position: 'absolute', right: 5, top: 4, color: t.accent, fontFamily: FONT.display, fontSize: 8 },
+  memoryLink: { position: 'absolute', backgroundColor: t.borderStrong, opacity: .7 },
+  memoryLinkH: { left: 45, right: 45, top: '50%', height: 1 },
+  memoryLinkV: { top: 38, bottom: 38, left: '50%', width: 1 },
   searchRow: {
     flexDirection: 'row',
     alignItems: 'center',
@@ -516,6 +557,9 @@ const memoryStyles = (t: Palette) => ({
   cardTextWrap: { flex: 1 },
   cardContent: { fontFamily: FONT.ui, color: t.text, fontSize: 12, lineHeight: 17 },
   cardMetaRow: { flexDirection: 'row', alignItems: 'center', gap: 8, marginTop: 4 },
+  cognitiveMeta: { flexDirection: 'row', flexWrap: 'wrap', gap: 4, marginTop: 7 },
+  cognitivePill: { flexDirection: 'row', alignItems: 'center', gap: 3, borderWidth: 1, borderColor: t.border, borderRadius: 10, backgroundColor: t.accentSoft, paddingHorizontal: 6, paddingVertical: 3 },
+  cognitivePillText: { color: t.textDim, fontFamily: FONT.monoBold, fontSize: 6.5 },
   cardCategory: { fontFamily: FONT.mono, color: t.accent, fontSize: 8.5, fontWeight: '700', letterSpacing: 0.4 },
   cardMeta: { fontFamily: FONT.mono, color: t.textFaint, fontSize: 8.5 },
   cardBottom: {

@@ -40,4 +40,10 @@ jobs:
         run: npm run lint
 
       - name: Test (jest)
-        run: npm test -- --ci
+        run: npm test -- --ci --runInBand
+
+      - name: Bundle web application
+        run: npx expo export --platform web --output-dir /tmp/seven-web
+
+      - name: Bundle Android application
+        run: npx expo export --platform android --output-dir /tmp/seven-android

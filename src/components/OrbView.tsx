@@ -11,12 +11,15 @@ interface OrbViewProps {
   size?: number;
   amplitude?: number; // 0.0 to 1.0 audio reactivity
   themeColor?: string;
+  qualityOverride?: 'performance' | 'balanced' | 'high';
   mode?: 'gideon' | 'vector' | 'shader';
   gyroEnabled?: boolean;
   /** Text being spoken right now — Gideon's mouth articulates it. */
   speechText?: string;
   /** TTS rate, used to time the visemes. */
   speechRate?: number;
+  speechPositionMs?: number;
+  speechDurationMs?: number;
   /** Transient expression: a smile after a successful action, a stiffening
       after a failure. Only Gideon has a face to wear it on. */
   mood?: 'happy' | 'alert' | null;
@@ -32,14 +35,14 @@ interface OrbViewProps {
  * early return sat above the useRef calls, which crashed when avatarStyle
  * changed while mounted).
  */
-export const OrbView: React.FC<OrbViewProps> = ({ mode = 'gideon', mood, ...rest }) => {
+export const OrbView: React.FC<OrbViewProps> = ({ mode = 'gideon', mood, qualityOverride, ...rest }) => {
   if (mode === 'shader') {
     return <OrbShaderView {...rest} />;
   }
   if (mode === 'vector') {
     return <VectorOrb {...rest} />;
   }
-  return <GideonAvatar {...rest} mood={mood} />;
+  return <GideonAvatar {...rest} mood={mood} qualityOverride={qualityOverride} />;
 };
 
 interface VectorOrbProps {

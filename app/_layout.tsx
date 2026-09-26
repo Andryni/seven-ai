@@ -2,17 +2,19 @@ import React, { useEffect, useState } from 'react';
 import { useRouter, usePathname } from 'expo-router';
 import { Platform, View, StyleSheet } from 'react-native';
 import * as Updates from 'expo-updates';
-import * as Notifications from 'expo-notifications';
 import { Stack } from 'expo-router';
 import { StatusBar } from 'expo-status-bar';
 import { useFonts } from 'expo-font';
 import { SafeAreaProvider, useSafeAreaInsets } from 'react-native-safe-area-context';
-import { ShareIntentProvider } from 'expo-share-intent';
+import { ShareIntentProvider } from '../src/services/shareIntentAdapter';
 import { useSevenStore } from '../src/store/useSevenStore';
 import { useWidgetRefresh } from '../src/hooks/useWidgetRefresh';
 import { fileOrganizer } from '../src/services/fileOrganizer';
 import { routineService } from '../src/services/routineService';
 import { installNotificationHandler } from '../src/services/notificationPresentation';
+import { getNotificationsModule } from '../src/services/notificationsAdapter';
+import { operationService } from '../src/services/operationService';
+import { autonomousCoreService } from '../src/services/autonomousCoreService';
 import { ThemeProvider, PALETTES } from '../src/theme/theme';
 import type { Palette } from '../src/theme/theme';
 import { useResolvedUiMode } from '../src/hooks/useResolvedUiMode';
@@ -20,6 +22,7 @@ import { installWebFonts, NATIVE_FONT_MAP } from '../src/theme/typography';
 import { SandboxExecutorHost } from '../src/components/SandboxExecutorHost';
 import { LaunchSplash } from '../src/components/LaunchSplash';
 import { AppLockScreen } from '../src/components/AppLockScreen';
+import { AppErrorBoundary } from '../src/components/AppErrorBoundary';
 import { useAppLock } from '../src/hooks/useAppLock';
 import { useConditionalRoutines } from '../src/hooks/useConditionalRoutines';
 
@@ -36,6 +39,8 @@ import { useConditionalRoutines } from '../src/hooks/useConditionalRoutines';
 // routine firing on an open app used to be invisible. Module scope installs the
 // policy exactly once per process, before anything can schedule a notification.
 installNotificationHandler();
+void operationService.initialize();
+void autonomousCoreService.initialize();
 
 const PUBLIC_ROUTES = ['/onboarding'];
 
@@ -49,6 +54,7 @@ export default function RootLayout() {
   const loadSavedConfig = useSevenStore((s) => s.loadSavedConfig);
   const isInitialized = useSevenStore((s) => s.isInitialized);
   const isConfigured = useSevenStore((s) => s.config.isConfigured);
+  const language = useSevenStore((s) => s.config.language ?? 'en');
   const themeName = useSevenStore((s) => s.config.theme ?? 'seven');
   // Resolves 'auto' against the live OS appearance setting; 'dark'/'light'
   // pin it. Kept out of the store itself so the app never has to persist
@@ -92,9 +98,10 @@ export default function RootLayout() {
   // after processing, so a cold launch no longer replays yesterday's tap
   // over and over.
   useEffect(() => {
-    if (Platform.OS === 'web') return;
+    const notifications = getNotificationsModule();
+    if (!notifications) return;
 
-    const runFromResponse = (response: Notifications.NotificationResponse | null) => {
+    const runFromResponse = (response: import('expo-notifications').NotificationResponse | null) => {
       const data = response?.notification.request.content.data as Record<string, unknown> | undefined;
       routineService.handleNotificationResponse(data, response).then(({ ran, outcome }) => {
         if (ran && outcome) {
@@ -103,8 +110,8 @@ export default function RootLayout() {
       });
     };
 
-    Notifications.getLastNotificationResponseAsync().then(runFromResponse);
-    const subscription = Notifications.addNotificationResponseReceivedListener(runFromResponse);
+    notifications.getLastNotificationResponseAsync().then(runFromResponse);
+    const subscription = notifications.addNotificationResponseReceivedListener(runFromResponse);
     return () => subscription.remove();
   }, []);
 
@@ -137,7 +144,9 @@ export default function RootLayout() {
     >
       <ThemeProvider themeName={themeName} uiMode={uiMode}>
         <SafeAreaProvider>
-          <RootFrame palette={palette} />
+          <AppErrorBoundary palette={palette} language={language}>
+            <RootFrame palette={palette} />
+          </AppErrorBoundary>
         </SafeAreaProvider>
       </ThemeProvider>
     </ShareIntentProvider>

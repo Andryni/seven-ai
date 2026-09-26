@@ -1,3 +1,6 @@
+import { fetchWithTimeout } from './network';
+import { useSevenStore } from '../store/useSevenStore';
+import { cloudJournalService } from './cloudJournalService';
 /**
  * OpenRouter chat completion — the second brain.
  *
@@ -59,7 +62,7 @@ class OpenRouterService {
     const key = apiKey.trim();
     if (!key) return { ok: false, message: 'No key entered' };
     try {
-      const res = await fetch('https://openrouter.ai/api/v1/auth/key', {
+      const res = await fetchWithTimeout('https://openrouter.ai/api/v1/auth/key', {
         headers: { Authorization: `Bearer ${key}` },
       });
       if (res.ok) return { ok: true, message: 'OpenRouter key valid' };
@@ -83,7 +86,14 @@ class OpenRouterService {
     messages: OpenRouterMessage[],
     model: string = DEFAULT_MODEL
   ): Promise<OpenRouterResult> {
-    const res = await fetch(ENDPOINT, {
+    const privacy = useSevenStore.getState().config;
+    if (privacy.privacyProfile === 'local' || privacy.cloudTextEnabled === false) {
+      throw new Error('Cloud text processing is disabled by the active privacy profile.');
+    }
+    if (privacy.cloudJournalEnabled !== false) {
+      cloudJournalService.record({ provider: 'openrouter', action: 'chat completion', model, status: 'sent', dataClass: 'text' }).catch(() => {});
+    }
+    const res = await fetchWithTimeout(ENDPOINT, {
       method: 'POST',
       headers: {
         Authorization: `Bearer ${apiKey}`,
@@ -95,6 +105,7 @@ class OpenRouterService {
     });
 
     if (!res.ok) {
+      if (privacy.cloudJournalEnabled !== false) cloudJournalService.record({ provider: 'openrouter', action: 'chat completion', model, status: 'failed', dataClass: 'text' }).catch(() => {});
       const body = await res.text().catch(() => '');
       throw new Error(`OpenRouter ${res.status}: ${body.slice(0, 200) || res.statusText}`);
     }
@@ -108,6 +119,7 @@ class OpenRouterService {
     const promptTokens = readTokenCount(data?.usage?.prompt_tokens);
     const completionTokens = readTokenCount(data?.usage?.completion_tokens);
 
+    if (privacy.cloudJournalEnabled !== false) cloudJournalService.record({ provider: 'openrouter', action: 'chat completion', model, status: 'completed', dataClass: 'text' }).catch(() => {});
     return {
       text,
       model: typeof data?.model === 'string' && data.model ? data.model : model,

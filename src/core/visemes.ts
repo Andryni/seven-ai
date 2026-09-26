@@ -212,5 +212,26 @@ export const textToVisemes = (text: string, options: { rate?: number } = {}): Vi
 export const visemeDuration = (frames: VisemeFrame[]): number =>
   frames.reduce((total, frame) => total + frame.durationMs, 0);
 
+/** Maps a real decoder position onto the text-derived timeline. Neural audio
+ * can be longer or shorter than the estimate; scaling removes cumulative drift
+ * while preserving the ordered mouth shapes. */
+export const visemeAtPlaybackPosition = (
+  frames: VisemeFrame[],
+  positionMs: number,
+  durationMs: number
+): VisemeFrame | undefined => {
+  if (!frames.length || !Number.isFinite(durationMs) || durationMs <= 0) return undefined;
+  const total = visemeDuration(frames);
+  const normalized = Math.max(0, Math.min(1, positionMs / durationMs));
+  const target = normalized * total;
+  let cursor = 0;
+  return (
+    frames.find((frame) => {
+      cursor += frame.durationMs;
+      return target <= cursor;
+    }) || frames[frames.length - 1]
+  );
+};
+
 /** All mouth shapes can be listed this way for debug/preview tooling. */
 export const VISEME_IDS = Object.keys(VISEME_SHAPES) as VisemeId[];

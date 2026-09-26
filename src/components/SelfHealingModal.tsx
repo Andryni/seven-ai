@@ -1,14 +1,15 @@
 import React, { useState } from 'react';
 import { FONT } from '../theme/typography';
+import { useTheme, useThemeStyles, type Palette } from '../theme/theme';
 import {
   View,
   Text,
-  StyleSheet,
   Modal,
   TouchableOpacity,
   ScrollView,
 } from 'react-native';
 import { useSevenStore } from '../store/useSevenStore';
+import { t } from '../theme/i18n';
 import {
   ShieldAlert,
   Zap,
@@ -29,6 +30,9 @@ export const SelfHealingModal: React.FC<SelfHealingModalProps> = ({
   onSimulateBug,
 }) => {
   const patchLogs = useSevenStore((s) => s.patchLogs);
+  const palette = useTheme();
+  const styles = useThemeStyles(diagnosticStyles);
+  const lang = useSevenStore((s) => s.config.language ?? 'en');
   const [isHealing, setIsHealing] = useState(false);
 
   const handleSimulate = async () => {
@@ -48,15 +52,15 @@ export const SelfHealingModal: React.FC<SelfHealingModalProps> = ({
           {/* Header */}
           <View style={styles.modalHeader}>
             <View style={styles.headerLeft}>
-              <ShieldAlert size={18} color="#FF3366" />
+              <ShieldAlert size={18} color={palette.error} />
               <View>
-                <Text style={styles.modalTitle}>ANTI-PANIC ENGINE // CLR SYNTHESIZER</Text>
-                <Text style={styles.modalSubtitle}>AST HOT-PATCH RECOVERY MATRIX</Text>
+                <Text style={styles.modalTitle}>{t('diagnostics.title', lang)}</Text>
+                <Text style={styles.modalSubtitle}>{t('diagnostics.subtitle', lang)}</Text>
               </View>
             </View>
 
             <TouchableOpacity style={styles.closeBtn} accessibilityLabel="Close" onPress={onClose}>
-              <X size={16} color="#FFD700" />
+              <X size={16} color={palette.accent} />
             </TouchableOpacity>
           </View>
 
@@ -66,49 +70,60 @@ export const SelfHealingModal: React.FC<SelfHealingModalProps> = ({
               <View style={styles.statusRow}>
                 <View style={styles.statusIndicator}>
                   <View style={styles.pulsingLight} />
-                  <Text style={styles.statusLabel}>AST INTEGRITY MONITOR</Text>
+                  <Text style={styles.statusLabel}>{t('diagnostics.monitor', lang)}</Text>
                 </View>
-                <Text style={styles.statusActiveText}>ARMED & ACTIVE</Text>
+                <Text style={styles.statusActiveText}>{t('diagnostics.monitoring', lang)}</Text>
               </View>
 
               <Text style={styles.statusDesc}>
-                Wraps runtime calls, catches regressions, prompts Gemini AST synthesizer to generate
-                atomic hot-patches, verifies bytecode, and hot-swaps live without crashing.
+                {t('diagnostics.description', lang)}
               </Text>
 
               <TouchableOpacity
                 style={[styles.simulateBtn, isHealing && styles.simulatingBtn]}
-                accessibilityLabel="Trigger bug simulation and auto-fix"
+                accessibilityLabel="Trigger diagnostic simulation"
                 onPress={handleSimulate}
                 disabled={isHealing}
               >
-                <Zap size={14} color="#050508" />
+                <Zap size={14} color={palette.bgDeep} />
                 <Text style={styles.simulateBtnText}>
-                  {isHealing ? 'SYNTHESIZING HOT-PATCH...' : 'TRIGGER BUG SIMULATION & AUTO-FIX'}
+                  {isHealing ? t('diagnostics.running', lang) : t('diagnostics.run', lang)}
                 </Text>
               </TouchableOpacity>
             </View>
 
             {/* Patch History / Last Patch Details */}
-            <Text style={styles.sectionHeader}>LATEST PATCH JOURNAL</Text>
+            <Text style={styles.sectionHeader}>{t('diagnostics.latest', lang)}</Text>
 
             {patchLogs.length === 0 ? (
-              <Text style={styles.noPatchText}>No patches applied yet. All AST trees nominal.</Text>
+              <Text style={styles.noPatchText}>{t('diagnostics.empty', lang)}</Text>
             ) : (
               patchLogs.map((p) => (
                 <View key={p.id} style={styles.patchCard}>
                   <View style={styles.patchHeader}>
                     <View style={styles.patchIdBadge}>
-                      <Cpu size={12} color="#00FFA3" />
-                      <Text style={styles.patchIdText}>PATCH #{p.id}</Text>
+                      <Cpu size={12} color={palette.success} />
+                      <Text style={styles.patchIdText}>REPORT #{p.id}</Text>
                     </View>
                     <View style={styles.verifiedPill}>
-                      <CheckCircle2 size={10} color="#00FFA3" />
+                      <CheckCircle2 size={10} color={palette.success} />
                       <Text style={styles.verifiedText}>{p.status.toUpperCase()}</Text>
                     </View>
                   </View>
 
                   <Text style={styles.targetFileText}>Target: {p.targetFile}</Text>
+                  <View style={styles.assuranceRow}>
+                    <Text style={styles.riskPill}>RISK {(p.risk || 'medium').toUpperCase()}</Text>
+                    <Text style={styles.canaryPill}>CANARY {(p.canary?.status || 'pending').toUpperCase()}</Text>
+                  </View>
+                  {!!p.reproductionSteps?.length && (
+                    <View style={styles.reproBox}>
+                      <Text style={styles.reproTitle}>REPRODUCTION</Text>
+                      {p.reproductionSteps.map((step, index) => (
+                        <Text key={`${p.id}-step-${index}`} style={styles.reproStep}>{index + 1}. {step}</Text>
+                      ))}
+                    </View>
+                  )}
 
                   <View style={styles.errorBox}>
                     <Text style={styles.errorLabel}>CAUGHT ERROR:</Text>
@@ -119,10 +134,16 @@ export const SelfHealingModal: React.FC<SelfHealingModalProps> = ({
                     <Text style={styles.diffLabelOriginal}>- ORIGINAL (BUGGY):</Text>
                     <Text style={styles.codeSnippetOriginal}>{p.originalSnippet}</Text>
 
-                    <Text style={styles.diffLabelFixed}>+ SYNTHESIZED FIX:</Text>
+                    <Text style={styles.diffLabelFixed}>+ {t('diagnostics.suggested', lang)}:</Text>
                     <Text style={styles.codeSnippetFixed}>{p.fixedSnippet}</Text>
                   </View>
 
+                  {!!p.rollbackPlan && (
+                    <View style={styles.rollbackBox}>
+                      <Text style={styles.rollbackTitle}>ROLLBACK PLAN</Text>
+                      <Text style={styles.rollbackText}>{p.rollbackPlan}</Text>
+                    </View>
+                  )}
                   <Text style={styles.engineText}>Engine: {p.engine}</Text>
                 </View>
               ))
@@ -141,10 +162,10 @@ export const SelfHealingModal: React.FC<SelfHealingModalProps> = ({
   );
 };
 
-const styles = StyleSheet.create({
+const diagnosticStyles = (palette: Palette) => ({
   backdrop: {
     flex: 1,
-    backgroundColor: 'rgba(0, 0, 0, 0.85)',
+    backgroundColor: palette.isDark ? 'rgba(0,0,0,0.85)' : 'rgba(20,20,30,0.45)',
     justifyContent: 'center',
     alignItems: 'center',
     padding: 16,
@@ -153,10 +174,10 @@ const styles = StyleSheet.create({
     width: '100%',
     maxWidth: 520,
     maxHeight: '85%',
-    backgroundColor: '#0a0a10',
+    backgroundColor: palette.bgDeep,
     borderRadius: 8,
     borderWidth: 1,
-    borderColor: '#FF3366',
+    borderColor: palette.error,
     overflow: 'hidden',
   },
   modalHeader: {
@@ -164,9 +185,9 @@ const styles = StyleSheet.create({
     alignItems: 'center',
     justifyContent: 'space-between',
     padding: 12,
-    backgroundColor: 'rgba(255, 51, 102, 0.1)',
+    backgroundColor: palette.accentSoft,
     borderBottomWidth: 1,
-    borderBottomColor: 'rgba(255, 51, 102, 0.3)',
+    borderBottomColor: palette.borderStrong,
   },
   headerLeft: {
     flexDirection: 'row',
@@ -175,14 +196,14 @@ const styles = StyleSheet.create({
   },
   modalTitle: {
     fontFamily: FONT.mono,
-    color: '#FF3366',
+    color: palette.error,
     fontSize: 11,
     fontWeight: '800',
     letterSpacing: 0.5,
   },
   modalSubtitle: {
     fontFamily: FONT.mono,
-    color: 'rgba(255, 255, 255, 0.5)',
+    color: palette.textFaint,
     fontSize: 8.5,
   },
   closeBtn: {
@@ -192,11 +213,11 @@ const styles = StyleSheet.create({
     padding: 12,
   },
   statusCard: {
-    backgroundColor: 'rgba(255, 255, 255, 0.03)',
+    backgroundColor: palette.bgDeep,
     borderRadius: 6,
     padding: 10,
     borderWidth: 1,
-    borderColor: 'rgba(255, 255, 255, 0.08)',
+    borderColor: palette.border,
     marginBottom: 12,
   },
   statusRow: {
@@ -214,23 +235,23 @@ const styles = StyleSheet.create({
     width: 7,
     height: 7,
     borderRadius: 3.5,
-    backgroundColor: '#00FFA3',
+    backgroundColor: palette.success,
   },
   statusLabel: {
     fontFamily: FONT.mono,
-    color: '#FFF',
+    color: palette.text,
     fontSize: 10,
     fontWeight: '700',
   },
   statusActiveText: {
     fontFamily: FONT.mono,
-    color: '#00FFA3',
+    color: palette.success,
     fontSize: 9.5,
     fontWeight: '800',
   },
   statusDesc: {
     fontFamily: FONT.mono,
-    color: 'rgba(255, 255, 255, 0.65)',
+    color: palette.textDim,
     fontSize: 9.5,
     lineHeight: 14,
     marginBottom: 10,
@@ -239,23 +260,23 @@ const styles = StyleSheet.create({
     flexDirection: 'row',
     alignItems: 'center',
     justifyContent: 'center',
-    backgroundColor: '#FFD700',
+    backgroundColor: palette.accent,
     paddingVertical: 8,
     borderRadius: 4,
     gap: 6,
   },
   simulatingBtn: {
-    backgroundColor: '#BD00FF',
+    backgroundColor: palette.info,
   },
   simulateBtnText: {
     fontFamily: FONT.mono,
-    color: '#050508',
+    color: palette.bgDeep,
     fontSize: 10,
     fontWeight: '800',
   },
   sectionHeader: {
     fontFamily: FONT.mono,
-    color: '#FFD700',
+    color: palette.accent,
     fontSize: 10,
     fontWeight: '700',
     letterSpacing: 1,
@@ -263,15 +284,15 @@ const styles = StyleSheet.create({
   },
   noPatchText: {
     fontFamily: FONT.mono,
-    color: 'rgba(255, 255, 255, 0.4)',
+    color: palette.textFaint,
     fontSize: 10,
     fontStyle: 'italic',
   },
   patchCard: {
-    backgroundColor: 'rgba(0, 0, 0, 0.5)',
+    backgroundColor: palette.bgDeep,
     borderRadius: 6,
     borderWidth: 1,
-    borderColor: 'rgba(255, 215, 0, 0.25)',
+    borderColor: palette.border,
     padding: 10,
     marginBottom: 10,
   },
@@ -288,7 +309,7 @@ const styles = StyleSheet.create({
   },
   patchIdText: {
     fontFamily: FONT.mono,
-    color: '#FFD700',
+    color: palette.accent,
     fontSize: 11,
     fontWeight: '800',
   },
@@ -296,95 +317,104 @@ const styles = StyleSheet.create({
     flexDirection: 'row',
     alignItems: 'center',
     gap: 3,
-    backgroundColor: 'rgba(0, 255, 163, 0.15)',
+    backgroundColor: palette.accentSoft,
     paddingHorizontal: 6,
     paddingVertical: 2,
     borderRadius: 3,
   },
   verifiedText: {
     fontFamily: FONT.mono,
-    color: '#00FFA3',
+    color: palette.success,
     fontSize: 8.5,
     fontWeight: '700',
   },
   targetFileText: {
     fontFamily: FONT.mono,
-    color: 'rgba(255, 255, 255, 0.7)',
+    color: palette.textDim,
     fontSize: 9.5,
     marginBottom: 6,
   },
+  assuranceRow: { flexDirection: 'row', gap: 6, marginBottom: 7 },
+  riskPill: { color: palette.warning, fontFamily: FONT.monoBold, fontSize: 8, borderWidth: 1, borderColor: palette.warning, borderRadius: 3, paddingHorizontal: 5, paddingVertical: 2 },
+  canaryPill: { color: palette.info, fontFamily: FONT.monoBold, fontSize: 8, borderWidth: 1, borderColor: palette.info, borderRadius: 3, paddingHorizontal: 5, paddingVertical: 2 },
+  reproBox: { backgroundColor: palette.bgElevated, borderLeftWidth: 2, borderLeftColor: palette.info, padding: 7, marginBottom: 7 },
+  reproTitle: { color: palette.info, fontFamily: FONT.monoBold, fontSize: 8, marginBottom: 3 },
+  reproStep: { color: palette.textDim, fontFamily: FONT.mono, fontSize: 8, lineHeight: 13 },
+  rollbackBox: { backgroundColor: palette.bgElevated, borderLeftWidth: 2, borderLeftColor: palette.warning, padding: 7, marginBottom: 7 },
+  rollbackTitle: { color: palette.warning, fontFamily: FONT.monoBold, fontSize: 8, marginBottom: 3 },
+  rollbackText: { color: palette.textDim, fontFamily: FONT.mono, fontSize: 8, lineHeight: 12 },
   errorBox: {
-    backgroundColor: 'rgba(255, 51, 102, 0.08)',
+    backgroundColor: palette.accentSoft,
     borderLeftWidth: 2,
-    borderLeftColor: '#FF3366',
+    borderLeftColor: palette.error,
     padding: 6,
     marginBottom: 6,
   },
   errorLabel: {
     fontFamily: FONT.mono,
-    color: '#FF3366',
+    color: palette.error,
     fontSize: 8.5,
     fontWeight: '700',
     marginBottom: 2,
   },
   errorContent: {
     fontFamily: FONT.mono,
-    color: '#FF80A0',
+    color: palette.error,
     fontSize: 9,
   },
   diffBox: {
-    backgroundColor: '#050508',
+    backgroundColor: palette.bgDeep,
     borderRadius: 4,
     padding: 8,
     marginBottom: 6,
   },
   diffLabelOriginal: {
     fontFamily: FONT.mono,
-    color: '#FF3366',
+    color: palette.error,
     fontSize: 8.5,
     fontWeight: '700',
     marginBottom: 2,
   },
   codeSnippetOriginal: {
     fontFamily: FONT.mono,
-    color: '#FFA0B0',
+    color: palette.error,
     fontSize: 9.5,
     marginBottom: 6,
   },
   diffLabelFixed: {
     fontFamily: FONT.mono,
-    color: '#00FFA3',
+    color: palette.success,
     fontSize: 8.5,
     fontWeight: '700',
     marginBottom: 2,
   },
   codeSnippetFixed: {
     fontFamily: FONT.mono,
-    color: '#A7F3D0',
+    color: palette.success,
     fontSize: 9.5,
   },
   engineText: {
     fontFamily: FONT.mono,
-    color: 'rgba(255, 255, 255, 0.4)',
+    color: palette.textFaint,
     fontSize: 8.5,
   },
   modalFooter: {
     padding: 10,
-    backgroundColor: 'rgba(5, 5, 8, 0.95)',
+    backgroundColor: palette.bgElevated,
     borderTopWidth: 1,
-    borderTopColor: 'rgba(255, 215, 0, 0.2)',
+    borderTopColor: palette.border,
     alignItems: 'flex-end',
   },
   dismissBtn: {
     paddingHorizontal: 12,
     paddingVertical: 6,
-    backgroundColor: 'rgba(255, 215, 0, 0.1)',
+    backgroundColor: palette.accentSoft,
     borderRadius: 4,
   },
   dismissBtnText: {
     fontFamily: FONT.mono,
-    color: '#FFD700',
+    color: palette.accent,
     fontSize: 10,
     fontWeight: '700',
   },
-});
+} as const);

@@ -1,14 +1,27 @@
 import { Buffer } from 'buffer';
-import 'expo-router/entry';
-import { registerWidgetTaskHandler } from 'react-native-android-widget';
-import { widgetTaskHandler } from './src/widgets/widget-task-handler';
+import Constants from 'expo-constants';
 
 if (typeof global !== 'undefined' && !global.Buffer) {
   global.Buffer = Buffer;
 }
 
-// Runs the SevenStatus home-screen widget's render/update lifecycle in the
-// headless JS context Android spins up for widget events. Safe to register
-// unconditionally: on iOS/web this is a same-process no-op registration
-// that is simply never invoked (there is no AppWidget host to call it).
-registerWidgetTaskHandler(widgetTaskHandler);
+const isExpoGo =
+  Constants.appOwnership === 'expo' ||
+  String(Constants.executionEnvironment) === 'storeClient';
+
+// Native home-screen widgets are not bundled in Expo Go. Keeping registration
+// behind a runtime require lets the same JavaScript bundle open in Expo Go,
+// while development/production clients still register the headless handler.
+if (!isExpoGo) {
+  try {
+    // eslint-disable-next-line @typescript-eslint/no-require-imports
+    const { registerWidgetTaskHandler } = require('react-native-android-widget');
+    // eslint-disable-next-line @typescript-eslint/no-require-imports
+    const { widgetTaskHandler } = require('./src/widgets/widget-task-handler');
+    registerWidgetTaskHandler(widgetTaskHandler);
+  } catch {
+    // Native widget module absent from this client flavor.
+  }
+}
+
+require('expo-router/entry');

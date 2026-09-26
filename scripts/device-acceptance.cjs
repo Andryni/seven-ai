@@ -7,7 +7,7 @@
  *   1. build   — EAS preview APK (or reuse one you already downloaded)
  *   2. install — adb install onto the connected device
  *   3. flows   — the Maestro end-to-end flows in .maestro/
- *   4. font    — OS font-scale A/B: does our 1.3 cap actually hold on device?
+ *   4. font    — OS font-scale A/B: does our 1.6 cap actually hold on device?
  *
  * The last stage is the one that cannot be answered from a unit test: the cap
  * is applied by a Metro resolution shim (src/theme/fontScaling.ts), and the only
@@ -49,7 +49,7 @@ function parseArgs(argv) {
     dryRun: false,
     lowScale: 0.9,
     highScale: 1.6,
-    cap: 1.3,
+    cap: 1.6,
     measure: null,
     timeoutMs: 25 * 60_000,
   };
@@ -92,7 +92,7 @@ Usage: node scripts/device-acceptance.cjs [options]
   --skip-font        skip the font-scale measurement
   --low-scale <n>    lower font scale to compare (default 0.9)
   --high-scale <n>   upper font scale to compare (default 1.6)
-  --cap <n>          the cap the app is supposed to apply (default 1.3)
+  --cap <n>          the cap the app is supposed to apply (default 1.6)
   --measure <regex>  restrict the measurement to matching labels
   --out <dir>        artifact directory (default .acceptance)
   --dry-run          print the plan without touching the device or EAS

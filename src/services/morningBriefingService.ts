@@ -90,8 +90,6 @@ class MorningBriefingService {
       ? (hour < 18 ? 'Bonjour' : 'Bonsoir')
       : (hour < 12 ? 'Good morning' : hour < 18 ? 'Good afternoon' : 'Good evening');
 
-    const emails = store.googleState.recentEmails;
-
     // Real world facts first: Open-Meteo for the weather, RSS for the news,
     // and — when calendar permission was already granted — the actual
     // device agenda for today. This used to always read `googleState.
@@ -145,8 +143,8 @@ class MorningBriefingService {
         location: live.weather ? live.weather.location : (config.city || '—'),
       },
       unreadEmailsSummary: isFr
-        ? `Vous avez ${emails.length} transmission(s) prioritaire(s) dans votre file Gmail.`
-        : `You have ${emails.length} priority transmissions in your Gmail queue. Security audit and architecture reviews are cleared.`,
+        ? `Gmail signale ${store.googleState.unreadEmailsCount} message(s) non lu(s) lors de la dernière synchronisation.`
+        : `Gmail reported ${store.googleState.unreadEmailsCount} unread message(s) at the last sync.`,
       agendaItems: events.map((e) => ({ time: e.time, title: e.title })),
       deviceHealth: {
         ...deviceHealth,
@@ -159,8 +157,9 @@ class MorningBriefingService {
               ? 'Armé • Aucune anomalie'
               : 'Armed • Zero Regressions',
       },
-      techHighlight:
-        'Seven AI neural core operating at 60 FPS. Dave Agent is ready for autonomous multi-file web deployment.',
+      techHighlight: isFr
+        ? 'Seven AI est prêt. Les performances graphiques réelles sont affichées dans le HUD.'
+        : 'Seven AI is ready. Live graphics performance is shown in the HUD.',
       headlines: live.news,
       weatherIsLive: !!live.weather,
       spokenScript: (() => {
@@ -183,8 +182,8 @@ class MorningBriefingService {
         }
         parts.push(
           isFr
-            ? `Vous avez ${emails.length} e-mail(s) et ${events.length} événement(s) prévus aujourd'hui. Je suis à vos ordres.`
-            : `You have ${emails.length} unread emails and ${events.length} events scheduled today. Standing by for your orders.`
+            ? `Vous avez ${store.googleState.unreadEmailsCount} e-mail(s) non lu(s) lors de la dernière synchronisation et ${events.length} événement(s) prévus aujourd'hui. Je suis à vos ordres.`
+            : `You had ${store.googleState.unreadEmailsCount} unread email(s) at the last sync and ${events.length} event(s) scheduled today. Standing by for your orders.`
         );
         return parts.join(' ');
       })(),

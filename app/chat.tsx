@@ -8,6 +8,8 @@ import {
   FlatList,
   Platform,
   Image,
+  AccessibilityInfo,
+  Linking,
 } from 'react-native';
 import { useRouter, useLocalSearchParams } from 'expo-router';
 import { useSevenStore } from '../src/store/useSevenStore';
@@ -24,6 +26,7 @@ import { BottomNav } from '../src/components/BottomNav';
 import { TapScale } from '../src/components/TapScale';
 import { IconCaption } from '../src/components/IconCaption';
 import { useVoice } from '../src/hooks/useVoice';
+import { agentForTool, operationService } from '../src/services/operationService';
 import { useTheme, useThemeStyles } from '../src/theme/theme';
 import type { Palette } from '../src/theme/theme';
 import { t } from '../src/theme/i18n';
@@ -52,11 +55,15 @@ import {
   Paperclip,
   Waves,
   Download,
+  FileText,
 } from 'lucide-react-native';
 import * as ImagePicker from 'expo-image-picker';
 import * as FileSystem from 'expo-file-system/legacy';
-import { useShareIntentContext } from 'expo-share-intent';
-import { documentAnalysisService } from '../src/services/documentAnalysisService';
+import { useShareIntentContext } from '../src/services/shareIntentAdapter';
+import {
+  documentAnalysisService,
+  type DocumentAnalysisResult,
+} from '../src/services/documentAnalysisService';
 import { shareIntentService } from '../src/services/shareIntentService';
 
 export default function ChatScreen() {
@@ -77,6 +84,8 @@ export default function ChatScreen() {
 
   const [inputQuery, setInputQuery] = useState('');
   const [selectedImage, setSelectedImage] = useState<{ uri: string; base64: string; mimeType: string } | null>(null);
+  const [pendingDocument, setPendingDocument] = useState<DocumentAnalysisResult | null>(null);
+  const [isReadingDocument, setIsReadingDocument] = useState(false);
   const [showTerminal, setShowTerminal] = useState(false);
   const [showSelfHealingModal, setShowSelfHealingModal] = useState(false);
   const [isProcessing, setIsProcessing] = useState(false);
@@ -111,6 +120,8 @@ export default function ChatScreen() {
     isAudible,
     partialTranscript,
     spokenText,
+    speechPositionMs,
+    speechDurationMs,
     speak,
     stopSpeaking,
     startListening,
@@ -141,6 +152,7 @@ export default function ChatScreen() {
 
       if (!result.canceled && result.assets?.[0]?.base64) {
         const asset = result.assets[0];
+        setPendingDocument(null);
         setSelectedImage({
           uri: asset.uri,
           base64: asset.base64!,
@@ -168,6 +180,7 @@ export default function ChatScreen() {
 
       if (!result.canceled && result.assets?.[0]?.base64) {
         const asset = result.assets[0];
+        setPendingDocument(null);
         setSelectedImage({
           uri: asset.uri,
           base64: asset.base64!,
@@ -181,14 +194,33 @@ export default function ChatScreen() {
 
   const handlePickDocument = async () => {
     haptics.light();
+    setIsReadingDocument(true);
     try {
       const doc = await documentAnalysisService.pickAndReadDocument();
-      if (doc.success && doc.textSnippet) {
-        const prompt = `Analyse et résume ce document "${doc.name}" :\n\n"""\n${doc.textSnippet}\n"""`;
-        handleSend(prompt);
+      if (!doc.success) {
+        addTerminalLog(doc.message, 'warn');
+        return;
       }
-    } catch (e) {
-      console.warn('Error reading document:', e);
+      // Selection and transmission are intentionally separate: the user can
+      // inspect the name, size and analysis mode, edit their instruction, or
+      // remove the file before any content leaves the device.
+      setSelectedImage(null);
+      setPendingDocument(doc);
+      AccessibilityInfo.announceForAccessibility(
+        (config.language || 'en') === 'fr'
+          ? `Document ${doc.name} prêt. Vérifiez puis envoyez.`
+          : `Document ${doc.name} ready. Review and send when ready.`
+      );
+      setInputQuery(
+        (config.language || 'en') === 'fr'
+          ? `Analyse et résume « ${doc.name} ».`
+          : `Analyze and summarize “${doc.name}”.`
+      );
+      addTerminalLog(doc.message, 'success');
+    } catch (e: any) {
+      addTerminalLog(`Document error: ${e?.message || e}`, 'error');
+    } finally {
+      setIsReadingDocument(false);
     }
   };
 
@@ -304,20 +336,46 @@ export default function ChatScreen() {
     }, delayMs);
   };
 
-  const handleSend = async (textToSend?: string) => {
+  const handleSend = async (
+    textToSend?: string,
+    attachmentOverride?: { uri?: string; base64: string; mimeType: string }
+  ) => {
     const query = textToSend || inputQuery;
-    const currentImage = selectedImage;
-    if ((!query.trim() && !currentImage) || isProcessing) return;
+    const document = attachmentOverride ? null : pendingDocument;
+    const currentAttachment =
+      attachmentOverride ||
+      selectedImage ||
+      (document?.base64
+        ? { base64: document.base64, mimeType: document.mimeType || 'application/pdf' }
+        : null);
+    if ((!query.trim() && !currentAttachment && !document) || isProcessingRef.current) return;
+    // State updates are asynchronous; the ref closes the same-frame window in
+    // which a double tap or duplicate recognition result could submit twice.
+    isProcessingRef.current = true;
+
+    const localizedDefault =
+      (config.language || 'en') === 'fr' ? 'Analyse cette pièce jointe.' : 'Analyze this attachment.';
+    const visibleQuery = query.trim() || localizedDefault;
+    const modelQuery = document?.textSnippet
+      ? `${visibleQuery}\n\n--- DOCUMENT: ${document.name} ---\n${document.textSnippet}\n--- END DOCUMENT ---`
+      : visibleQuery;
 
     haptics.light();
     setInputQuery('');
     setSelectedImage(null);
+    setPendingDocument(null);
     setIsProcessing(true);
+    const operationId = operationService.begin({
+      kind: 'conversation',
+      title: visibleQuery.slice(0, 90),
+      steps: ['Understand request', 'Select specialist', 'Execute tools', 'Verify result', 'Report'],
+    });
+    operationService.progress(operationId, 14, 'Parsing intent and context', 0);
 
     addChatMessage({
       sender: 'user',
-      text: query || 'Analyse cette image',
-      imageUri: currentImage?.uri,
+      text: document ? `${visibleQuery}\n📎 ${document.name}` : visibleQuery,
+      imageUri: currentAttachment?.uri,
     });
 
     // Progressive display: create the assistant placeholder immediately so the
@@ -329,9 +387,11 @@ export default function ChatScreen() {
 
     try {
       let acc = '';
+      let lastStreamPaintAt = 0;
 
+      operationService.progress(operationId, 28, 'Gideon is selecting tools and specialist agents', 1);
       const result = await sevenAgent.chatStream(
-        query,
+        modelQuery,
         (token) => {
           if (token) {
             acc += token;
@@ -342,17 +402,27 @@ export default function ChatScreen() {
               const latest = markers[markers.length - 1].slice(1, -1).trim();
               if (latest) setCurrentAction(latest);
             }
-            updateChatMessage(reply.id, { text: acc });
+            // Updating Zustand/FlatList for every network token can mean
+            // hundreds of full message-list renders per second. Paint at a
+            // human-smooth cadence; the final result below is always exact.
+            const now = Date.now();
+            if (now - lastStreamPaintAt >= 80) {
+              lastStreamPaintAt = now;
+              updateChatMessage(reply.id, { text: acc });
+            }
           }
         },
-        currentImage || undefined
+        currentAttachment || undefined
       );
 
+      operationService.assign(operationId, agentForTool(result.toolCall?.name));
+      operationService.progress(operationId, 82, 'Verifying specialist output', 3);
       updateChatMessage(reply.id, {
         text: result.text,
         toolCall: result.toolCall,
         terminalLogs: result.terminalLogs,
       });
+      operationService.complete(operationId, result.toolCall?.summary || 'Response delivered');
 
       // An action actually ran → Gideon smiles.
       if (result.toolCall) flashMood('happy');
@@ -371,6 +441,7 @@ export default function ChatScreen() {
         triggerContinuousListen(1200);
       }
     } catch (e: any) {
+      operationService.fail(operationId, e?.message || String(e));
       haptics.error();
       flashMood('alert');
       // Fill the pending placeholder bubble instead of appending a new one,
@@ -385,6 +456,7 @@ export default function ChatScreen() {
       // again (the success path arms its own chain through speak's onDone).
       if (handsFreeRef.current) triggerContinuousListen(1500);
     } finally {
+      isProcessingRef.current = false;
       setIsProcessing(false);
       setCurrentAction(null);
     }
@@ -566,6 +638,9 @@ export default function ChatScreen() {
       case 'open_dave_preview':
       case 'open_browser':
         router.push('/dave');
+        break;
+      case 'open_source':
+        if (payload?.url) await Linking.openURL(payload.url);
         break;
       case 'undo_organize':
         handleSend('undo last organization');
@@ -825,6 +900,33 @@ export default function ChatScreen() {
           </View>
         )}
 
+        {(pendingDocument || isReadingDocument) && (
+          <View style={styles.documentPreviewCard} accessibilityLiveRegion="polite">
+            <View style={styles.documentIconWell}>
+              <FileText size={20} color={palette.accent} />
+            </View>
+            <View style={styles.documentPreviewCopy}>
+              <Text style={styles.documentName} numberOfLines={1}>
+                {isReadingDocument ? 'READING DOCUMENT…' : pendingDocument?.name}
+              </Text>
+              <Text style={styles.documentMeta} numberOfLines={1}>
+                {isReadingDocument
+                  ? 'LOCAL EXTRACTION'
+                  : `${pendingDocument?.mimeType === 'application/pdf' ? 'PAGE-AWARE PDF' : 'LOCAL TEXT'} · ${pendingDocument?.size ? `${Math.max(1, Math.round(pendingDocument.size / 1024))} KB` : 'SIZE UNKNOWN'}`}
+              </Text>
+            </View>
+            {!isReadingDocument && (
+              <TouchableOpacity
+                style={styles.clearImageBtn}
+                accessibilityLabel="Remove document"
+                onPress={() => setPendingDocument(null)}
+              >
+                <X size={16} color={palette.error} />
+              </TouchableOpacity>
+            )}
+          </View>
+        )}
+
         <View style={styles.inputWrapper}>
           <TouchableOpacity
             style={styles.mediaBtn}
@@ -846,6 +948,7 @@ export default function ChatScreen() {
             style={styles.mediaBtn}
             accessibilityLabel={t('input.attachDocument', config.language)}
             onPress={handlePickDocument}
+            disabled={isReadingDocument || isProcessing}
           >
             <Paperclip size={16} color={palette.accent} />
           </TouchableOpacity>
@@ -877,13 +980,17 @@ export default function ChatScreen() {
           </TouchableOpacity>
 
           <TouchableOpacity
-            style={[styles.sendBtn, (!inputQuery.trim() && !selectedImage) && styles.sendBtnDisabled]}
+            style={[
+              styles.sendBtn,
+              (!inputQuery.trim() && !selectedImage && !pendingDocument) && styles.sendBtnDisabled,
+            ]}
             accessibilityLabel={t('input.send', config.language)}
             onPress={() => handleSend()}
-            disabled={(!inputQuery.trim() && !selectedImage) || isProcessing}
+            disabled={(!inputQuery.trim() && !selectedImage && !pendingDocument) || isProcessing}
           >
             <Send size={16} color={palette.bgDeep} />
-          </TouchableOpacity>          </View>
+          </TouchableOpacity>
+        </View>
         </View>
       </ScreenReveal>
 
@@ -908,6 +1015,8 @@ export default function ChatScreen() {
           gyroEnabled={config.gyroEnabled ?? true}
           speechText={spokenText}
           speechRate={config.voiceRate}
+          speechPositionMs={speechPositionMs}
+          speechDurationMs={speechDurationMs}
           mood={mood}
           isRecording={isRecording}
           isSpeaking={isSpeaking}
@@ -916,6 +1025,7 @@ export default function ChatScreen() {
           sevenText={lastSevenText}
           actionLabel={currentAction}
           voiceMode={voiceMode}
+          voiceEngine={config.voiceEngine || 'system'}
           language={config.language || 'en'}
           onMicPress={handleMicToggle}
           onStopSpeaking={stopSpeaking}
@@ -1049,6 +1159,45 @@ const chatStyles = (t: Palette) =>
       width: 32,
       height: 32,
       borderRadius: 4,
+    },
+    documentPreviewCard: {
+      minHeight: 58,
+      flexDirection: 'row',
+      alignItems: 'center',
+      gap: 10,
+      backgroundColor: t.bgElevated,
+      borderWidth: 1,
+      borderColor: t.borderStrong,
+      borderRadius: 12,
+      paddingHorizontal: 10,
+      paddingVertical: 8,
+      marginBottom: 7,
+    },
+    documentIconWell: {
+      width: 38,
+      height: 38,
+      borderRadius: 10,
+      alignItems: 'center',
+      justifyContent: 'center',
+      backgroundColor: t.accentSoft,
+      borderWidth: 1,
+      borderColor: t.border,
+    },
+    documentPreviewCopy: {
+      flex: 1,
+      minWidth: 0,
+    },
+    documentName: {
+      color: t.text,
+      fontFamily: FONT.uiMedium,
+      fontSize: 14,
+    },
+    documentMeta: {
+      color: t.accent,
+      fontFamily: FONT.mono,
+      fontSize: 9,
+      letterSpacing: 0.6,
+      marginTop: 2,
     },
     imagePreviewText: {
       flex: 1,

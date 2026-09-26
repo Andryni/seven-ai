@@ -20,7 +20,9 @@ jest.mock('lucide-react-native', () => ({
 // test exercises the brain readout, not battery/network plumbing.
 jest.mock('expo-battery', () => ({
   BatteryState: { UNKNOWN: 0, UNPLUGGED: 1, CHARGING: 2, FULL: 3 },
-  getBatteryLevelAsync: jest.fn().mockResolvedValue(0.5),
+  // The brain pill does not depend on battery. Keep this pending so the hook
+  // cannot schedule an unrelated state update outside the assertion's act().
+  getBatteryLevelAsync: jest.fn(() => new Promise(() => {})),
   addBatteryStateListener: jest.fn(() => ({ remove: jest.fn() })),
   addBatteryLevelListener: jest.fn(() => ({ remove: jest.fn() })),
 }));
