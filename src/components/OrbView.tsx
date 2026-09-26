@@ -17,6 +17,8 @@ interface OrbViewProps {
   speechText?: string;
   /** TTS rate, used to time the visemes. */
   speechRate?: number;
+  speechPositionMs?: number;
+  speechDurationMs?: number;
   /** Transient expression: a smile after a successful action, a stiffening
       after a failure. Only Gideon has a face to wear it on. */
   mood?: 'happy' | 'alert' | null;

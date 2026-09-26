@@ -32,6 +32,8 @@ interface VoiceModeOverlayProps {
   speechText?: string;
   /** TTS rate used to time the visemes. */
   speechRate?: number;
+  speechPositionMs?: number;
+  speechDurationMs?: number;
   /** Transient expression: smiles after a successful action, stiffens on failure. */
   mood?: 'happy' | 'alert' | null;
   isRecording: boolean;
@@ -352,6 +354,8 @@ export const VoiceModeOverlay: React.FC<VoiceModeOverlayProps> = ({
   gyroEnabled = true,
   speechText = '',
   speechRate = 1,
+  speechPositionMs,
+  speechDurationMs,
   mood = null,
   isRecording,
   isSpeaking,
@@ -489,6 +493,8 @@ export const VoiceModeOverlay: React.FC<VoiceModeOverlayProps> = ({
               gyroEnabled={gyroEnabled}
               speechText={speechText}
               speechRate={speechRate}
+              speechPositionMs={speechPositionMs}
+              speechDurationMs={speechDurationMs}
               mood={mood}
             />
           </Animated.View>

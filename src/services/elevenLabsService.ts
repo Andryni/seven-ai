@@ -26,6 +26,7 @@ class ElevenLabsService {
     options: ElevenLabsVoiceOptions,
     callbacks?: {
       onStart?: () => void;
+      onProgress?: (positionMs: number, durationMs?: number) => void;
       onDone?: () => void;
       onError?: (error: unknown) => void;
     }
@@ -72,6 +73,7 @@ class ElevenLabsService {
       // returns — that is what keeps the lip-sync in step with the voice.
       return playRemoteAudio(response, 'elevenlabs', {
         onStart: callbacks?.onStart,
+        onProgress: callbacks?.onProgress,
         onDone: callbacks?.onDone,
         onError: callbacks?.onError,
       });

@@ -151,6 +151,8 @@ export const useVoice = () => {
   // cleared the moment speech stops — never before, or the mouth moves in
   // silence while the voice is still being synthesized.
   const [spokenText, setSpokenText] = useState('');
+  const [speechPositionMs, setSpeechPositionMs] = useState<number | undefined>();
+  const [speechDurationMs, setSpeechDurationMs] = useState<number | undefined>();
   const [voiceMode, setVoiceMode] = useState<'real' | 'demo'>(
     SPEECH_MODULE ? 'real' : 'demo'
   );
@@ -297,6 +299,8 @@ export const useVoice = () => {
        * that merely *asks* for audio.
        */
       const beginAudible = (cleanText: string) => {
+        setSpeechPositionMs(0);
+        setSpeechDurationMs(undefined);
         setIsAudible(true);
         setSpokenText(cleanText);
         startSyntheticAmplitude();
@@ -306,6 +310,8 @@ export const useVoice = () => {
         setIsSpeaking(false);
         setIsAudible(false);
         setSpokenText('');
+        setSpeechPositionMs(undefined);
+        setSpeechDurationMs(undefined);
         stopAmplitudeAnimation();
         setStatus('idle');
       };
@@ -399,6 +405,10 @@ export const useVoice = () => {
             },
             {
               onStart: () => beginAudible(cleanText),
+              onProgress: (positionMs: number, durationMs?: number) => {
+                setSpeechPositionMs(positionMs);
+                if (durationMs) setSpeechDurationMs(durationMs);
+              },
               onDone: () => {
                 finish();
                 onDone?.();
@@ -960,6 +970,9 @@ export const useVoice = () => {
     isAudible,
     /** Text currently being spoken ('' when silent) — drives the visemes. */
     spokenText,
+    /** Real neural-audio playback clock when exposed by the engine. */
+    speechPositionMs,
+    speechDurationMs,
     speak,
     stopSpeaking,
     startListening,

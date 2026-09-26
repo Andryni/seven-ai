@@ -1,5 +1,5 @@
 import React, { useEffect, useMemo, useRef, useState } from 'react';
-import { Animated, Easing, Platform, StyleSheet, View } from 'react-native';
+import { Animated, AppState, Easing, Platform, StyleSheet, View } from 'react-native';
 import { Accelerometer } from 'expo-sensors';
 import Svg, {
   Circle,
@@ -15,9 +15,15 @@ import Svg, {
 import { AssistantStatus } from '../types';
 import { useTheme } from '../theme/theme';
 import { useReducedMotion } from '../hooks/useReducedMotion';
+import { useSevenStore } from '../store/useSevenStore';
 import { computeGideonHue } from './gideonHue';
 import { HEAD_PATH, NECK_PATH, BUST_PATH, COLUMN_PATH, SCAN_LINES, LANDMARKS } from './gideonGeometry';
-import { VISEME_SHAPES, VisemeId, textToVisemes } from '../core/visemes';
+import {
+  VISEME_SHAPES,
+  VisemeId,
+  textToVisemes,
+  visemeAtPlaybackPosition,
+} from '../core/visemes';
 import {
   AUTO_SMILE_MS,
   EXPRESSION,
@@ -41,6 +47,9 @@ interface GideonAvatarProps {
   speechText?: string;
   /** TTS rate (0.5 – 2.0) used to time the visemes. */
   speechRate?: number;
+  /** Real neural-audio playback clock, when available. */
+  speechPositionMs?: number;
+  speechDurationMs?: number;
   /** Enables subtle device-parallax so the projected head has physical depth. */
   gyroEnabled?: boolean;
   /**
@@ -70,12 +79,22 @@ export const GideonAvatar: React.FC<GideonAvatarProps> = ({
   themeColor = '#00E5FF',
   speechText = '',
   speechRate = 1,
+  speechPositionMs,
+  speechDurationMs,
   gyroEnabled = true,
   mood = null,
 }) => {
   /** viewBox unit (0–200) → device pixels. */
   const px = (units: number) => (units * size) / 200;
   const palette = useTheme();
+  const avatarQuality = useSevenStore((state) => state.config.avatarQuality ?? 'balanced');
+  const avatarParallax = useSevenStore((state) => state.config.avatarParallaxIntensity ?? 1);
+  const avatarExpression = useSevenStore((state) => state.config.avatarExpressionIntensity ?? 1);
+  const avatarMouth = useSevenStore((state) => state.config.avatarMouthIntensity ?? 1);
+  const avatarGaze = useSevenStore((state) => state.config.avatarGazeEnabled !== false);
+  const parallaxIntensity = Math.max(0, Math.min(2, avatarParallax));
+  const expressionIntensity = Math.max(0.5, Math.min(1.5, avatarExpression));
+  const mouthIntensity = Math.max(0.65, Math.min(1.4, avatarMouth));
 
   // NOTE: an earlier WebGL head experiment was built and wired here for a
   // while. Side by side the vector face read as the more realistic one, so
@@ -136,25 +155,42 @@ export const GideonAvatar: React.FC<GideonAvatarProps> = ({
       return;
     }
 
-    Accelerometer.setUpdateInterval(80);
-    const subscription = Accelerometer.addListener(({ x, y }) => {
-      Animated.parallel([
-        Animated.spring(tiltY, {
-          toValue: Math.max(-7, Math.min(7, x * 9)),
-          tension: 45,
-          friction: 9,
-          useNativeDriver: true,
-        }),
-        Animated.spring(tiltX, {
-          toValue: Math.max(-5, Math.min(5, -y * 7)),
-          tension: 45,
-          friction: 9,
-          useNativeDriver: true,
-        }),
-      ]).start();
+    Accelerometer.setUpdateInterval(
+      avatarQuality === 'high' ? 55 : avatarQuality === 'performance' ? 120 : 80
+    );
+    let sensor: { remove(): void } | null = null;
+    const startSensor = () => {
+      if (sensor || AppState.currentState !== 'active') return;
+      sensor = Accelerometer.addListener(({ x, y }) => {
+        Animated.parallel([
+          Animated.spring(tiltY, {
+            toValue: Math.max(-8, Math.min(8, x * 9 * parallaxIntensity)),
+            tension: 45,
+            friction: 9,
+            useNativeDriver: true,
+          }),
+          Animated.spring(tiltX, {
+            toValue: Math.max(-8, Math.min(8, -y * 7 * parallaxIntensity)),
+            tension: 45,
+            friction: 9,
+            useNativeDriver: true,
+          }),
+        ]).start();
+      });
+    };
+    const appState = AppState.addEventListener('change', (next) => {
+      if (next === 'active') startSensor();
+      else {
+        sensor?.remove();
+        sensor = null;
+      }
     });
-    return () => subscription.remove();
-  }, [gyroEnabled, reduceMotion, tiltX, tiltY]);
+    startSensor();
+    return () => {
+      appState.remove();
+      sensor?.remove();
+    };
+  }, [avatarQuality, gyroEnabled, reduceMotion, parallaxIntensity, tiltX, tiltY]);
 
   // Materialization on mount.
   useEffect(() => {
@@ -342,15 +378,32 @@ export const GideonAvatar: React.FC<GideonAvatarProps> = ({
     };
 
     const doLook = () => {
+      if (!avatarGaze || avatarQuality === 'performance') {
+        irisDrift.setValue(0);
+        irisLookY.setValue(0);
+        return;
+      }
+      const targetX =
+        status === 'listening' || status === 'speaking'
+          ? (Math.random() - 0.5) * 0.22
+          : status === 'thinking'
+            ? 0.55 + Math.random() * 0.25
+            : Math.random() * 2 - 1;
+      const targetY =
+        status === 'listening' || status === 'speaking'
+          ? (Math.random() - 0.5) * 0.16
+          : status === 'thinking'
+            ? -0.45
+            : (Math.random() * 2 - 1) * 0.7;
       Animated.parallel([
         Animated.timing(irisDrift, {
-          toValue: Math.random() * 2 - 1,
+          toValue: targetX,
           duration: 90,
           easing: Easing.out(Easing.quad),
           useNativeDriver: true,
         }),
         Animated.timing(irisLookY, {
-          toValue: (Math.random() * 2 - 1) * 0.7,
+          toValue: targetY,
           duration: 90,
           easing: Easing.out(Easing.quad),
           useNativeDriver: true,
@@ -368,12 +421,12 @@ export const GideonAvatar: React.FC<GideonAvatarProps> = ({
       clearTimeout(blinkTimer);
       clearTimeout(lookTimer);
     };
-  }, [blink, irisDrift, irisLookY]);
+  }, [avatarGaze, avatarQuality, blink, irisDrift, irisLookY, status]);
 
   // The furrow follows his state day-to-day (reasoning, building).
   useEffect(() => {
     Animated.timing(knit, {
-      toValue: browFurrowFor(status),
+      toValue: Math.min(1, browFurrowFor(status) * expressionIntensity),
       duration: 300,
       easing: Easing.out(Easing.cubic),
       // `knit` ultimately drives SVG layout attributes (including eyebrow
@@ -382,7 +435,7 @@ export const GideonAvatar: React.FC<GideonAvatarProps> = ({
       // and could drop the animation on device.
       useNativeDriver: false,
     }).start();
-  }, [knit, status]);
+  }, [expressionIntensity, knit, status]);
 
   // A task that settles on its own (any working state falling back to idle)
   // earns the same brief smile as an explicitly reported success.
@@ -408,23 +461,23 @@ export const GideonAvatar: React.FC<GideonAvatarProps> = ({
   useEffect(() => {
     const { smile: happy } = expressionTargets({ status, mood, autoSmile });
     Animated.timing(smile, {
-      toValue: happy,
+      toValue: Math.min(1, happy * expressionIntensity),
       duration: happy ? 260 : 420,
       easing: Easing.out(Easing.cubic),
       useNativeDriver: false,
     }).start();
-  }, [smile, status, mood, autoSmile]);
+  }, [expressionIntensity, smile, status, mood, autoSmile]);
 
   // A failure stiffens him: the brows snap up and the eyes open wider.
   useEffect(() => {
     const { alertness: alarmed } = expressionTargets({ status, mood, autoSmile });
     Animated.timing(alertness, {
-      toValue: alarmed,
+      toValue: Math.min(1, alarmed * expressionIntensity),
       duration: alarmed ? 170 : 520,
       easing: Easing.out(Easing.cubic),
       useNativeDriver: false,
     }).start();
-  }, [alertness, status, mood, autoSmile]);
+  }, [alertness, expressionIntensity, status, mood, autoSmile]);
 
   // Sound rings from the projector base while Gideon talks or listens.
   useEffect(() => {
@@ -459,7 +512,12 @@ export const GideonAvatar: React.FC<GideonAvatarProps> = ({
       const duration = Math.max(28, Math.min(durationMs * 0.36, 95));
       const easing = Easing.out(Easing.cubic);
       Animated.parallel([
-        Animated.timing(mouthOpen, { toValue: shape.open, duration, easing, useNativeDriver: false }),
+        Animated.timing(mouthOpen, {
+          toValue: Math.min(1, shape.open * mouthIntensity),
+          duration,
+          easing,
+          useNativeDriver: false,
+        }),
         Animated.timing(mouthWidth, { toValue: shape.width, duration, easing, useNativeDriver: false }),
         Animated.timing(lipFull, { toValue: shape.full, duration, easing, useNativeDriver: false }),
       ]).start();
@@ -474,6 +532,21 @@ export const GideonAvatar: React.FC<GideonAvatarProps> = ({
     }
 
     const frames = textToVisemes(speechText, { rate: speechRate });
+
+    // Neural engines can expose the actual decoder clock. Scale the text
+    // timeline to that duration and select the viseme at the real playback
+    // position, eliminating cumulative drift on longer answers.
+    if (
+      speechPositionMs !== undefined &&
+      speechDurationMs !== undefined &&
+      speechDurationMs > 0 &&
+      frames.length > 0
+    ) {
+      const active = visemeAtPlaybackPosition(frames, speechPositionMs, speechDurationMs);
+      if (active) animateTo(active.viseme, Math.min(active.durationMs, 90));
+      return;
+    }
+
     let cancelled = false;
     const timeouts: ReturnType<typeof setTimeout>[] = [];
 
@@ -503,7 +576,17 @@ export const GideonAvatar: React.FC<GideonAvatarProps> = ({
       cancelled = true;
       timeouts.forEach(clearTimeout);
     };
-  }, [status, speechText, speechRate, mouthOpen, mouthWidth, lipFull]);
+  }, [
+    status,
+    speechText,
+    speechRate,
+    speechPositionMs,
+    speechDurationMs,
+    mouthIntensity,
+    mouthOpen,
+    mouthWidth,
+    lipFull,
+  ]);
 
   // Do not start a JS-driven closing animation during unmount: there is no
   // frame left to display and its timer would outlive the component/test.
@@ -671,7 +754,7 @@ export const GideonAvatar: React.FC<GideonAvatarProps> = ({
   // --------------------------------------------------------------- Geometry
   // Below ~64 px the mesh and shading collapse into noise, so tiny renderings
   // (chat header chip) fall back to the silhouette + face only.
-  const detailed = size >= 64;
+  const detailed = size >= 64 && avatarQuality !== 'performance';
 
   const headPath = HEAD_PATH;
   const neckPath = NECK_PATH;

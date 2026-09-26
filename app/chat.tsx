@@ -118,6 +118,8 @@ export default function ChatScreen() {
     isAudible,
     partialTranscript,
     spokenText,
+    speechPositionMs,
+    speechDurationMs,
     speak,
     stopSpeaking,
     startListening,
@@ -984,6 +986,8 @@ export default function ChatScreen() {
           gyroEnabled={config.gyroEnabled ?? true}
           speechText={spokenText}
           speechRate={config.voiceRate}
+          speechPositionMs={speechPositionMs}
+          speechDurationMs={speechDurationMs}
           mood={mood}
           isRecording={isRecording}
           isSpeaking={isSpeaking}

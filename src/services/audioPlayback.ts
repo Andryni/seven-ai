@@ -7,6 +7,8 @@ export interface PlaybackCallbacks {
    *  request comes back. Lip-sync hangs off this so the mouth never moves
    *  before the voice is audible. */
   onStart?: () => void;
+  /** Real playback clock when the platform exposes it. */
+  onProgress?: (positionMs: number, durationMs?: number) => void;
   onDone?: () => void;
   onError?: (error: unknown) => void;
 }
@@ -80,6 +82,11 @@ export const playRemoteAudio = async (
       const audio = new Audio(url);
       webAudio = audio;
       audio.onplaying = () => callbacks.onStart?.();
+      audio.ontimeupdate = () =>
+        callbacks.onProgress?.(
+          Math.round(audio.currentTime * 1000),
+          Number.isFinite(audio.duration) ? Math.round(audio.duration * 1000) : undefined
+        );
       audio.onended = () => {
         URL.revokeObjectURL(url);
         if (webAudio === audio) webAudio = null;
@@ -120,6 +127,17 @@ export const playRemoteAudio = async (
     currentPlayer = player;
     let started = false;
     player.addListener('playbackStatusUpdate', (status) => {
+      if (
+        typeof status?.currentTime === 'number' &&
+        Number.isFinite(status.currentTime)
+      ) {
+        callbacks.onProgress?.(
+          Math.round(status.currentTime * 1000),
+          typeof status.duration === 'number' && Number.isFinite(status.duration)
+            ? Math.round(status.duration * 1000)
+            : undefined
+        );
+      }
       if (!started && status?.playing) {
         started = true;
         callbacks.onStart?.();

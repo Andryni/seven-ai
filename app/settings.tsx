@@ -22,6 +22,7 @@ import { SelfHealingModal } from '../src/components/SelfHealingModal';
 import { CapabilityHero } from '../src/components/CapabilityHero';
 import { ProviderHealthPanel } from '../src/components/ProviderHealthPanel';
 import { StorageGuardrails } from '../src/components/StorageGuardrails';
+import { OrbView } from '../src/components/OrbView';
 import { gmailService } from '../src/services/gmailService';
 import { instagramService } from '../src/services/instagramService';
 import { briefingNotifications } from '../src/services/briefingNotificationService';
@@ -469,6 +470,114 @@ export default function SettingsScreen() {
             <Text style={styles.avatarEngineHint}>
               Hologramme projecteur — tête filaire translucide, yeux et bouche articulés.
             </Text>
+          </View>
+
+          <View style={styles.avatarCalibrationCard}>
+            <OrbView
+              mode="gideon"
+              size={118}
+              status={isTestingVoice ? 'speaking' : 'idle'}
+              speechText={
+                isTestingVoice
+                  ? VOICE_TEST_PHRASES[voiceLanguage] || VOICE_TEST_PHRASES['en-US']
+                  : ''
+              }
+              speechRate={voiceRate}
+              gyroEnabled={config.gyroEnabled ?? true}
+              themeColor={palette.accent}
+            />
+            <View style={styles.avatarCalibrationCopy}>
+              <Text style={styles.calibrationTitle}>
+                {lang === 'fr' ? 'CALIBRATION GIDEON' : 'GIDEON CALIBRATION'}
+              </Text>
+              <Text style={styles.avatarEngineHint}>
+                {lang === 'fr'
+                  ? 'Utilisez TESTER LA VOIX plus bas pour vérifier ensemble la voix, les visèmes et la mâchoire.'
+                  : 'Use TEST VOICE below to verify voice, visemes and jaw movement together.'}
+              </Text>
+            </View>
+          </View>
+
+          <View style={[styles.appearanceRow, styles.appearanceRowSpaced]}>
+            <Text style={styles.inputLabel}>{lang === 'fr' ? 'QUALITÉ AVATAR' : 'AVATAR QUALITY'}</Text>
+            <View style={styles.chipRow}>
+              {(['performance', 'balanced', 'high'] as const).map((quality) => (
+                <TouchableOpacity
+                  key={quality}
+                  style={[
+                    styles.langChip,
+                    (config.avatarQuality ?? 'balanced') === quality && styles.langChipActive,
+                  ]}
+                  onPress={() => setConfig({ avatarQuality: quality })}
+                  accessibilityState={{ selected: (config.avatarQuality ?? 'balanced') === quality }}
+                >
+                  <Text
+                    style={[
+                      styles.langChipText,
+                      (config.avatarQuality ?? 'balanced') === quality && styles.langChipTextActive,
+                    ]}
+                  >
+                    {quality === 'performance'
+                      ? 'PERF'
+                      : quality === 'balanced'
+                        ? lang === 'fr' ? 'ÉQUILIBRÉE' : 'BALANCED'
+                        : lang === 'fr' ? 'HAUTE' : 'HIGH'}
+                  </Text>
+                </TouchableOpacity>
+              ))}
+            </View>
+          </View>
+
+          {[
+            {
+              key: 'avatarParallaxIntensity' as const,
+              label: lang === 'fr' ? 'INTENSITÉ PARALLAXE' : 'PARALLAX INTENSITY',
+              value: config.avatarParallaxIntensity ?? 1,
+              min: 0,
+              max: 2,
+            },
+            {
+              key: 'avatarExpressionIntensity' as const,
+              label: lang === 'fr' ? 'EXPRESSIVITÉ' : 'EXPRESSIVENESS',
+              value: config.avatarExpressionIntensity ?? 1,
+              min: 0.5,
+              max: 1.5,
+            },
+            {
+              key: 'avatarMouthIntensity' as const,
+              label: lang === 'fr' ? 'AMPLITUDE DE LA BOUCHE' : 'MOUTH AMPLITUDE',
+              value: config.avatarMouthIntensity ?? 1,
+              min: 0.65,
+              max: 1.4,
+            },
+          ].map((control) => (
+            <View key={control.key} style={[styles.appearanceRow, styles.appearanceRowSpaced]}>
+              <View style={styles.sliderLabelRow}>
+                <Text style={styles.inputLabel}>{control.label}</Text>
+                <Text style={styles.sliderValue}>{control.value.toFixed(2)}×</Text>
+              </View>
+              <Slider
+                style={styles.slider}
+                minimumValue={control.min}
+                maximumValue={control.max}
+                step={0.05}
+                value={control.value}
+                minimumTrackTintColor={palette.accent}
+                maximumTrackTintColor={palette.borderStrong}
+                thumbTintColor={palette.accent}
+                onSlidingComplete={(value) => setConfig({ [control.key]: value })}
+              />
+            </View>
+          ))}
+
+          <View style={[styles.appearanceRow, styles.appearanceRowSpaced]}>
+            <Text style={styles.inputLabel}>{lang === 'fr' ? 'REGARD CONTEXTUEL' : 'CONTEXTUAL GAZE'}</Text>
+            <Switch
+              value={config.avatarGazeEnabled !== false}
+              onValueChange={(value) => setConfig({ avatarGazeEnabled: value })}
+              trackColor={{ false: palette.bgElevated, true: palette.accent }}
+              thumbColor="#FFF"
+            />
           </View>
 
           {/* Gyroscope Motion Toggle */}
@@ -1673,6 +1782,28 @@ const settingsStyles = (t: Palette) =>
       fontSize: 8.5,
       marginTop: 5,
       lineHeight: 12,
+    },
+    avatarCalibrationCard: {
+      flexDirection: 'row',
+      alignItems: 'center',
+      gap: 10,
+      backgroundColor: t.bgDeep,
+      borderWidth: 1,
+      borderColor: t.borderStrong,
+      borderRadius: 12,
+      padding: 8,
+      marginBottom: 10,
+      overflow: 'hidden',
+    },
+    avatarCalibrationCopy: {
+      flex: 1,
+      minWidth: 0,
+    },
+    calibrationTitle: {
+      color: t.accent,
+      fontFamily: FONT.display,
+      fontSize: 13,
+      letterSpacing: 0.8,
     },
     voiceTestBtn: {
       flexDirection: 'row',

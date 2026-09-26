@@ -3,6 +3,7 @@ import {
   visemeDuration,
   VISEME_SHAPES,
   VISEME_IDS,
+  visemeAtPlaybackPosition,
   type VisemeId,
 } from '../src/core/visemes';
 
@@ -71,6 +72,15 @@ describe('viseme engine', () => {
       expect(frames[i].viseme).not.toBe(frames[i - 1].viseme);
       expect(frames[i].durationMs).toBeGreaterThan(0);
     }
+  });
+
+  it('tracks the real decoder clock without accumulating timing drift', () => {
+    const frames = textToVisemes('a mime');
+    expect(visemeAtPlaybackPosition(frames, 0, 4000)?.viseme).toBe(frames[0].viseme);
+    expect(visemeAtPlaybackPosition(frames, 4000, 4000)?.viseme).toBe(
+      frames[frames.length - 1].viseme
+    );
+    expect(visemeAtPlaybackPosition([], 10, 100)).toBeUndefined();
   });
 
   it('returns nothing for text without pronounceable characters', () => {

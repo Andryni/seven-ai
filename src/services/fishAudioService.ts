@@ -62,6 +62,7 @@ export interface FishAudioOptions {
 
 export interface FishAudioCallbacks {
   onStart?: () => void;
+  onProgress?: (positionMs: number, durationMs?: number) => void;
   onDone?: () => void;
   onError?: (error: unknown) => void;
 }
@@ -186,6 +187,7 @@ class FishAudioService {
       // the same thing as the voice being audible.
       return playRemoteAudio(response, 'fish', {
         onStart: callbacks?.onStart,
+        onProgress: callbacks?.onProgress,
         onDone: callbacks?.onDone,
         onError: callbacks?.onError,
       });

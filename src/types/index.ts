@@ -62,6 +62,14 @@ export interface AssistantConfig {
   organizerDirectoryUri?: string;
   wakeWordEnabled?: boolean;
   gyroEnabled?: boolean;
+  /** Avatar rendering budget. High keeps all anatomy and effects; performance
+      trims decorative detail while preserving speech and expressions. */
+  avatarQuality?: 'performance' | 'balanced' | 'high';
+  /** User-tunable Gideon motion/expression multipliers. */
+  avatarParallaxIntensity?: number;
+  avatarExpressionIntensity?: number;
+  avatarMouthIntensity?: number;
+  avatarGazeEnabled?: boolean;
   /** Shows a small text caption under icon-only buttons across the app
       (chat header, history actions...) — helps both readability and
       accessibility for anyone unsure what a bare icon does. */
