@@ -346,7 +346,10 @@ export default function ChatScreen() {
       (document?.base64
         ? { base64: document.base64, mimeType: document.mimeType || 'application/pdf' }
         : null);
-    if ((!query.trim() && !currentAttachment && !document) || isProcessing) return;
+    if ((!query.trim() && !currentAttachment && !document) || isProcessingRef.current) return;
+    // State updates are asynchronous; the ref closes the same-frame window in
+    // which a double tap or duplicate recognition result could submit twice.
+    isProcessingRef.current = true;
 
     const localizedDefault =
       (config.language || 'en') === 'fr' ? 'Analyse cette pièce jointe.' : 'Analyze this attachment.';
@@ -376,6 +379,7 @@ export default function ChatScreen() {
 
     try {
       let acc = '';
+      let lastStreamPaintAt = 0;
 
       const result = await sevenAgent.chatStream(
         modelQuery,
@@ -389,7 +393,14 @@ export default function ChatScreen() {
               const latest = markers[markers.length - 1].slice(1, -1).trim();
               if (latest) setCurrentAction(latest);
             }
-            updateChatMessage(reply.id, { text: acc });
+            // Updating Zustand/FlatList for every network token can mean
+            // hundreds of full message-list renders per second. Paint at a
+            // human-smooth cadence; the final result below is always exact.
+            const now = Date.now();
+            if (now - lastStreamPaintAt >= 80) {
+              lastStreamPaintAt = now;
+              updateChatMessage(reply.id, { text: acc });
+            }
           }
         },
         currentAttachment || undefined
@@ -432,6 +443,7 @@ export default function ChatScreen() {
       // again (the success path arms its own chain through speak's onDone).
       if (handsFreeRef.current) triggerContinuousListen(1500);
     } finally {
+      isProcessingRef.current = false;
       setIsProcessing(false);
       setCurrentAction(null);
     }

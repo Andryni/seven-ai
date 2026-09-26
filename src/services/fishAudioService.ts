@@ -149,7 +149,11 @@ export const verifyFishAudioKey = async (
 };
 
 class FishAudioService {
+  /** Invalidates synthesis requests as well as audio that already started. */
+  private generation = 0;
+
   async stopAudio(): Promise<void> {
+    this.generation += 1;
     await stopPlaybackAudio();
   }
 
@@ -163,6 +167,7 @@ class FishAudioService {
     if (!options.apiKey?.trim() || !text) return false;
 
     await this.stopAudio();
+    const generation = this.generation;
 
     try {
       const response = await fetchWithTimeout(TTS_URL, {
@@ -175,6 +180,7 @@ class FishAudioService {
         body: JSON.stringify(buildBody(options, text)),
       });
 
+      if (generation !== this.generation) return false;
       if (!response.ok) {
         const detail = await response.text().catch(() => '');
         throw new Error(`Fish Audio ${response.status}: ${detail.slice(0, 160)}`);
@@ -230,116 +236,96 @@ class FishAudioService {
     if (!options.apiKey?.trim() || !full) return false;
 
     const sentences = splitSentences(full);
-    if (sentences.length <= 1) {
-      // One short utterance: streaming has nothing to overlap, use the simple
-      // path (its error handling stays the single source of truth).
-      return this.speak(options, callbacks);
-    }
+    if (sentences.length <= 1) return this.speak(options, callbacks);
 
-    let cancelled = false;
+    // Stop both audible audio and older requests still waiting on the network.
+    await this.stopAudio();
+    const generation = this.generation;
+    const isCurrent = () => generation === this.generation;
     let started = false;
-    const firstStart = () => {
-      if (started) return;
-      started = true;
-      callbacks?.onStart?.();
+
+    const requestClip = async (sentence: string): Promise<Response> => {
+      const response = await fetchWithTimeout(TTS_URL, {
+        method: 'POST',
+        headers: {
+          Authorization: `Bearer ${options.apiKey!.trim()}`,
+          'Content-Type': 'application/json',
+          model: FISH_MODEL,
+        },
+        body: JSON.stringify(buildBody(options, sentence)),
+      });
+      if (!response.ok) {
+        const detail = await response.text().catch(() => '');
+        throw new Error(`Fish Audio ${response.status}: ${detail.slice(0, 120)}`);
+      }
+      return response;
     };
 
-    return new Promise<boolean>((resolve) => {
-      void (async () => {
-        let index = 0;
-        // One clip in flight ahead of playback: enough to hide a round-trip,
-        // small enough that a cancel wastes at most one synthesis.
-        let prefetched: { sentence: string; response: Response } | null = null;
-
-        const requestClip = async (sentence: string): Promise<Response> => {
-          const response = await fetchWithTimeout(TTS_URL, {
-            method: 'POST',
-            headers: {
-              Authorization: `Bearer ${options.apiKey!.trim()}`,
-              'Content-Type': 'application/json',
-              model: FISH_MODEL,
-            },
-            body: JSON.stringify(buildBody(options, sentence)),
-          });
-          if (!response.ok) {
-            const detail = await response.text().catch(() => '');
-            throw new Error(`Fish Audio ${response.status}: ${detail.slice(0, 120)}`);
-          }
-          return response;
+    /** playRemoteAudio resolves when playback starts. The stream must instead
+     * wait for `onDone`, otherwise every sentence gets its own simultaneous
+     * player — the source of the doubled/overlapping voices. */
+    const playClipToCompletion = async (response: Response): Promise<boolean> =>
+      new Promise<boolean>((resolve) => {
+        let settled = false;
+        const settle = (value: boolean) => {
+          if (settled) return;
+          settled = true;
+          resolve(value);
         };
-
-        const prefetchNext = () => {
-          if (cancelled || prefetched || index >= sentences.length) return;
-          const sentence = sentences[index];
-          requestClip(sentence)
-            .then((response) => {
-              prefetched = { sentence, response };
-            })
-            .catch(() => {
-              // Leave `prefetched` empty: the play loop will retry once inline
-              // and otherwise fall back for the rest.
-            });
-        };
-
-        try {
-          // Prime the very first clip before anything else — the latency the
-          // user actually feels is this request plus nothing else.
-          const first = sentences[index];
-          const firstResponse = await requestClip(first);
-          if (cancelled) {
-            resolve(false);
-            return;
-          }
-          index += 1;
-          prefetchNext();
-
-          while (index <= sentences.length) {
-            const clip = prefetched ?? { sentence: sentences[index - 1], response: firstResponse };
-            void clip;
-            // Play the clip we have; refetch inline if prefetch lost it.
-            const current =
-              index === 1
-                ? { sentence: first, response: firstResponse }
-                : prefetched ?? null;
-            if (!current) {
-              const response = await requestClip(sentences[index - 1]);
-              prefetched = { sentence: sentences[index - 1], response };
-              continue;
+        void playRemoteAudio(response, 'fish', {
+          onStart: () => {
+            if (!isCurrent()) return;
+            if (!started) {
+              started = true;
+              callbacks?.onStart?.();
             }
-            prefetched = null;
-            index += 1;
-            prefetchNext();
+          },
+          onDone: () => settle(true),
+          onError: () => settle(false),
+        }).then((played) => {
+          if (!played) settle(false);
+        });
+      });
 
-            const played = await playRemoteAudio(current.response, 'fish', {
-              onStart: firstStart,
-              onDone: () => {
-                if (index > sentences.length && !cancelled) {
-                  callbacks?.onDone?.();
-                  resolve(true);
-                }
-              },
-              onError: () => {
-                cancelled = true;
-                callbacks?.onError?.(new Error('clip failed'));
-                // Hand what was never spoken to the system voice.
-                const rest = sentences.slice(index - 1).join(' ');
-                options.onSystemFallback?.(rest || full);
-                resolve(false);
-              },
-            });
-            if (!played || cancelled) {
-              if (!started) resolve(played);
-              return;
-            }
+    let responsePromise = requestClip(sentences[0]);
+    for (let index = 0; index < sentences.length; index += 1) {
+      try {
+        const response = await responsePromise;
+        if (!isCurrent()) return true;
+
+        // Synthesize exactly one clip ahead while this one is audible.
+        const nextPromise =
+          index + 1 < sentences.length ? requestClip(sentences[index + 1]) : null;
+        // Mark a speculative rejection handled immediately; it is still
+        // observed by the awaited promise on the next loop iteration.
+        if (nextPromise) void nextPromise.catch(() => {});
+        const played = await playClipToCompletion(response);
+        if (!isCurrent()) return true;
+        if (!played) {
+          const error = new Error('Fish Audio clip playback failed');
+          if (started && index + 1 < sentences.length) {
+            options.onSystemFallback?.(sentences.slice(index + 1).join(' '));
+            return true;
           }
-        } catch (error) {
-          console.warn('Fish Audio streamed TTS error:', error);
           callbacks?.onError?.(error);
-          options.onSystemFallback?.(full);
-          resolve(false);
+          return false;
         }
-      })();
-    });
+        if (nextPromise) responsePromise = nextPromise;
+      } catch (error) {
+        if (!isCurrent()) return true;
+        console.warn('Fish Audio streamed TTS error:', error);
+        if (started) {
+          options.onSystemFallback?.(sentences.slice(index).join(' '));
+          // The turn is still handled: the system voice owns its remainder.
+          return true;
+        }
+        callbacks?.onError?.(error);
+        return false;
+      }
+    }
+
+    if (isCurrent()) callbacks?.onDone?.();
+    return true;
   }
 }
 

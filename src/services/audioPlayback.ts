@@ -1,6 +1,7 @@
 import { Platform } from 'react-native';
 import * as FileSystem from 'expo-file-system/legacy';
 import { createAudioPlayer, setAudioModeAsync } from 'expo-audio';
+import { Buffer } from 'buffer';
 
 export interface PlaybackCallbacks {
   /** Fired when audio really starts coming out of the speaker — not when the
@@ -15,6 +16,9 @@ export interface PlaybackCallbacks {
 
 let webAudio: HTMLAudioElement | null = null;
 let currentPlayer: { remove(): void } | null = null;
+/** Monotonic ownership token: a late HTTP/base64 conversion may never replace
+ * audio requested more recently. */
+let playbackGeneration = 0;
 
 /**
  * Fire the callbacks of the current owner on a sequence boundary and mark the
@@ -46,6 +50,7 @@ const stopWebAudio = (): void => {
  * the player or file may already be gone.
  */
 export const stopPlaybackAudio = async (): Promise<void> => {
+  playbackGeneration += 1;
   stopWebAudio();
   if (currentPlayer) {
     const player = currentPlayer;
@@ -74,47 +79,56 @@ export const playRemoteAudio = async (
   filePrefix: string,
   callbacks: PlaybackCallbacks
 ): Promise<boolean> => {
+  // Claim the one global playback slot before doing any expensive conversion.
+  // If a newer utterance arrives while this response is decoded, the token
+  // check below prevents the stale clip from suddenly starting afterwards.
+  await stopPlaybackAudio();
+  const generation = playbackGeneration;
   try {
-    const blob = await response.blob();
-
     if (Platform.OS === 'web') {
+      const blob = await response.blob();
+      if (generation !== playbackGeneration) return false;
       const url = URL.createObjectURL(blob);
       const audio = new Audio(url);
       webAudio = audio;
-      audio.onplaying = () => callbacks.onStart?.();
+      audio.onplaying = () => {
+        if (generation === playbackGeneration) callbacks.onStart?.();
+      };
       audio.ontimeupdate = () =>
-        callbacks.onProgress?.(
+        generation === playbackGeneration && callbacks.onProgress?.(
           Math.round(audio.currentTime * 1000),
           Number.isFinite(audio.duration) ? Math.round(audio.duration * 1000) : undefined
         );
       audio.onended = () => {
         URL.revokeObjectURL(url);
         if (webAudio === audio) webAudio = null;
-        callbacks.onDone?.();
+        if (generation === playbackGeneration) callbacks.onDone?.();
       };
       audio.onerror = (event: unknown) => {
         URL.revokeObjectURL(url);
         if (webAudio === audio) webAudio = null;
-        callbacks.onError?.(event);
+        if (generation === playbackGeneration) callbacks.onError?.(event);
       };
       await audio.play();
       return true;
     }
 
-    const reader = new FileReader();
-    const base64 = await new Promise<string>((resolve, reject) => {
-      reader.onloadend = () => {
-        const result = reader.result as string;
-        resolve(result.split(',')[1]);
-      };
-      reader.onerror = reject;
-      reader.readAsDataURL(blob);
-    });
+    // On native, Response.blob() round-trips through React Native's blob store
+    // and then through FileReader/base64. Besides the warning it emits, that
+    // blocks the JS thread noticeably for speech clips. Convert the response
+    // bytes directly instead.
+    const bytes = await response.arrayBuffer();
+    if (generation !== playbackGeneration) return false;
+    const base64 = Buffer.from(bytes).toString('base64');
 
     const tempUri = `${FileSystem.cacheDirectory || ''}${filePrefix}_${Date.now()}.mp3`;
     await FileSystem.writeAsStringAsync(tempUri, base64, {
       encoding: FileSystem.EncodingType.Base64,
     });
+    if (generation !== playbackGeneration) {
+      cleanupFile(tempUri);
+      return false;
+    }
 
     // `duckOthers` pauses music apps instead of talking over them; safe on both
     // platforms, and `playsInSilentMode` keeps iOS from muting the butler.
@@ -138,12 +152,13 @@ export const playRemoteAudio = async (
             : undefined
         );
       }
+      if (generation !== playbackGeneration) return;
       if (!started && status?.playing) {
         started = true;
         callbacks.onStart?.();
       }
       if (!status?.didJustFinish) return;
-      currentPlayer = null;
+      if (currentPlayer === player) currentPlayer = null;
       player.remove();
       cleanupFile(tempUri);
       callbacks.onDone?.();
@@ -151,8 +166,10 @@ export const playRemoteAudio = async (
     player.play();
     return true;
   } catch (error) {
-    currentPlayer = null;
-    callbacks.onError?.(error);
+    if (generation === playbackGeneration) {
+      currentPlayer = null;
+      callbacks.onError?.(error);
+    }
     return false;
   }
 };

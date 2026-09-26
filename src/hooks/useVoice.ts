@@ -65,6 +65,11 @@ interface LiveSession {
 /** One microphone session for the whole app, with a single named owner. */
 let liveSession: LiveSession | null = null;
 
+/** One speech turn for the whole app. Several screens can mount useVoice at
+ * once; without global ownership each hook could start its own TTS engine. */
+let activeSpeechTurn = 0;
+let activeSpeechOwner: symbol | null = null;
+
 /**
  * True while *any* screen holds the microphone.
  *
@@ -219,6 +224,14 @@ export const useVoice = () => {
           void rec.stop();
         } catch {}
       }
+      // A screen may disappear while its neural request is still in flight.
+      // Invalidate it now so it cannot begin talking over the next screen.
+      if (activeSpeechOwner === owner) {
+        activeSpeechTurn += 1;
+        activeSpeechOwner = null;
+        void fishAudioService.stopAudio();
+        void Speech.stop();
+      }
     };
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, []);
@@ -291,6 +304,17 @@ export const useVoice = () => {
         return;
       }
 
+      const turn = ++activeSpeechTurn;
+      activeSpeechOwner = ownerRef.current;
+      const isCurrentTurn = () =>
+        turn === activeSpeechTurn && activeSpeechOwner === ownerRef.current;
+
+      // Cancel every backend, not only the backend selected by this hook.
+      // This matters when navigation leaves a Fish voice alive and the next
+      // screen uses the system or ElevenLabs voice.
+      await Promise.allSettled([fishAudioService.stopAudio(), Speech.stop()]);
+      if (!isCurrentTurn()) return;
+
       // A transcription that cannot be recognized should never leave the mouth
       // open: anything below is either set on real playback start or cleared.
       /**
@@ -299,6 +323,7 @@ export const useVoice = () => {
        * that merely *asks* for audio.
        */
       const beginAudible = (cleanText: string) => {
+        if (!isCurrentTurn()) return;
         setSpeechPositionMs(0);
         setSpeechDurationMs(undefined);
         setIsAudible(true);
@@ -307,6 +332,8 @@ export const useVoice = () => {
       };
 
       const finish = () => {
+        if (!isCurrentTurn()) return;
+        activeSpeechOwner = null;
         setIsSpeaking(false);
         setIsAudible(false);
         setSpokenText('');
@@ -317,7 +344,9 @@ export const useVoice = () => {
       };
 
       const speakWithSystem = (cleanText: string, language: string, done?: () => void) => {
+        if (!isCurrentTurn()) return;
         const completed = () => {
+          if (!isCurrentTurn()) return;
           finish();
           done?.();
         };
@@ -369,8 +398,10 @@ export const useVoice = () => {
               language: targetLanguage,
               rate: config.voiceRate || 1,
               onSystemFallback: (rest) => {
-                // Fish died mid-turn: the unspoken remainder goes to the
-                // system voice, so the answer is still heard in full.
+                if (!isCurrentTurn()) return;
+                // Fish died mid-turn: only the unspoken remainder changes
+                // engine. The stream reports the turn as handled, preventing a
+                // second full-text fallback from starting at the same time.
                 console.warn('Fish Audio failed mid-turn, system voice takes over');
                 speakWithSystem(rest, targetLanguage, onDone);
               },
@@ -378,17 +409,18 @@ export const useVoice = () => {
             {
               onStart: () => beginAudible(cleanText),
               onDone: () => {
+                if (!isCurrentTurn()) return;
                 finish();
                 onDone?.();
               },
               onError: () => {
-                // Silence would be worse than a robotic voice: nothing played
-                // at all, so the whole text goes to the system voice.
+                // The single fallback below owns recovery. Starting it here as
+                // well produced two concurrent system utterances.
                 console.warn('Fish Audio failed, falling back to the system voice');
-                speakWithSystem(cleanText, targetLanguage, onDone);
               },
             }
           );
+          if (!isCurrentTurn()) return;
           if (played) return;
         }
 
@@ -406,26 +438,30 @@ export const useVoice = () => {
             {
               onStart: () => beginAudible(cleanText),
               onProgress: (positionMs: number, durationMs?: number) => {
+                if (!isCurrentTurn()) return;
                 setSpeechPositionMs(positionMs);
                 if (durationMs) setSpeechDurationMs(durationMs);
               },
               onDone: () => {
+                if (!isCurrentTurn()) return;
                 finish();
                 onDone?.();
               },
               onError: () => {
+                // Recovery is centralized after `speak` returns false.
                 console.warn('ElevenLabs failed, falling back to the system voice');
-                speakWithSystem(cleanText, targetLanguage, onDone);
               },
             }
           );
+          if (!isCurrentTurn()) return;
           if (played) return;
         }
 
         // Engine 3 — the system voice, always available.
         await Speech.stop();
-        speakWithSystem(cleanText, targetLanguage, onDone);
+        if (isCurrentTurn()) speakWithSystem(cleanText, targetLanguage, onDone);
       } catch (e) {
+        if (!isCurrentTurn()) return;
         console.warn('Speech error:', e);
         finish();
         onDone?.();
@@ -451,6 +487,8 @@ export const useVoice = () => {
   );
 
   const stopSpeaking = useCallback(async () => {
+    activeSpeechTurn += 1;
+    activeSpeechOwner = null;
     try {
       try {
         await fishAudioService.stopAudio();

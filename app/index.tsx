@@ -146,6 +146,7 @@ export default function DashboardScreen() {
   const [showSelfHealingModal, setShowSelfHealingModal] = useState(false);
   const [showBriefingModal, setShowBriefingModal] = useState(false);
   const [isProcessing, setIsProcessing] = useState(false);
+  const isProcessingRef = useRef(false);
   const [isOffline, setIsOffline] = useState(false);
   const [queuedCommand, setQueuedCommand] = useState<string | null>(null);
   // ARRANGE mode: the module deck stops navigating and starts moving.
@@ -161,11 +162,13 @@ export default function DashboardScreen() {
   const handleSend = useCallback(
     async (textToSend?: string) => {
       const query = textToSend;
-      if (!query?.trim() || isProcessing) return;
+      if (!query?.trim() || isProcessingRef.current) return;
+      isProcessingRef.current = true;
 
       // Offline: queue the command instead of failing silently.
       const net = await NetInfo.fetch();
       if (!net.isConnected) {
+        isProcessingRef.current = false;
         queuedRef.current = query;
         setQueuedCommand(query);
         addTerminalLog(`OFFLINE: "${query.slice(0, 40)}" queued until reconnect.`, 'warn');
@@ -185,11 +188,16 @@ export default function DashboardScreen() {
 
       try {
         let acc = '';
+        let lastStreamPaintAt = 0;
 
         const result = await sevenAgent.chatStream(query, (token) => {
           if (token) {
             acc += token;
-            updateChatMessage(reply.id, { text: acc });
+            const now = Date.now();
+            if (now - lastStreamPaintAt >= 80) {
+              lastStreamPaintAt = now;
+              updateChatMessage(reply.id, { text: acc });
+            }
           }
         });
 
@@ -212,11 +220,11 @@ export default function DashboardScreen() {
               : 'Encountered an exception while processing your directive. Auto-healing matrix has been dispatched.',
         });
       } finally {
+        isProcessingRef.current = false;
         setIsProcessing(false);
       }
     },
     [
-      isProcessing,
       addChatMessage,
       addTerminalLog,
       updateChatMessage,
