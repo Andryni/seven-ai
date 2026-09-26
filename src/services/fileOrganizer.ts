@@ -59,10 +59,32 @@ class FileOrganizerService {
   private static instance: FileOrganizerService;
   private downloadsDir: string;
   private logFilePath: string;
+  private historyFilePath: string;
 
   private constructor() {
     this.downloadsDir = `${storageService.getDocumentDirectory()}Downloads/`;
     this.logFilePath = `${storageService.getDocumentDirectory()}organizer_log.json`;
+    this.historyFilePath = `${storageService.getDocumentDirectory()}organizer_history.json`;
+  }
+
+  private async readHistory(): Promise<OrganizeResult[]> {
+    try {
+      const info = await storageService.getInfo(this.historyFilePath);
+      if (!info.exists) return [];
+      const parsed = JSON.parse(await storageService.readAsString(this.historyFilePath));
+      return Array.isArray(parsed) ? parsed : [];
+    } catch {
+      return [];
+    }
+  }
+
+  private async recordJournal(result: OrganizeResult): Promise<void> {
+    const history = await this.readHistory();
+    const next = [result, ...history.filter((entry) => entry.id !== result.id)].slice(0, 10);
+    await Promise.all([
+      storageService.writeAsString(this.logFilePath, JSON.stringify(result, null, 2)),
+      storageService.writeAsString(this.historyFilePath, JSON.stringify(next, null, 2)),
+    ]);
   }
 
   public static getInstance(): FileOrganizerService {
@@ -101,12 +123,23 @@ class FileOrganizerService {
   }
 
   private async safCopyDelete(from: string, targetDir: string, name: string): Promise<string> {
+    const existing = await FileSystem.StorageAccessFramework.readDirectoryAsync(targetDir).catch(() => []);
+    const existingNames = new Set(existing.map((uri) => this.safName(uri).toLowerCase()));
+    const dot = name.lastIndexOf('.');
+    const stem = dot > 0 ? name.slice(0, dot) : name;
+    const extension = dot > 0 ? name.slice(dot) : '';
+    let safeName = name;
+    let suffix = 2;
+    while (existingNames.has(safeName.toLowerCase())) {
+      safeName = `${stem} (${suffix++})${extension}`;
+    }
+
     const content = await FileSystem.StorageAccessFramework.readAsStringAsync(from, {
       encoding: FileSystem.EncodingType.Base64,
     });
     const target = await FileSystem.StorageAccessFramework.createFileAsync(
       targetDir,
-      name,
+      safeName,
       'application/octet-stream'
     );
     await FileSystem.StorageAccessFramework.writeAsStringAsync(target, content, {
@@ -130,7 +163,74 @@ class FileOrganizerService {
     }
   }
 
-  private async organizePublicDirectory(directoryUri: string): Promise<OrganizeResult> {
+  private categoryFor(name: string): { extension: string; category: FileCategory } {
+    const parts = name.split('.');
+    const extension = parts.length > 1 ? parts.pop()!.toLowerCase() : '';
+    return { extension, category: EXTENSION_CATEGORIES[extension] || 'Others' };
+  }
+
+  /** Scans without creating folders or moving bytes. The returned paths are
+   * stable identifiers used by the confirmation UI to exclude individual
+   * files from the eventual operation. */
+  public async previewOrganization(): Promise<OrganizeResult> {
+    const store = useSevenStore.getState();
+    const publicUri = Platform.OS === 'android' ? store.config.organizerDirectoryUri : undefined;
+    const files: OrganizeFile[] = [];
+    const categories: Record<string, number> = {};
+
+    if (publicUri) {
+      const entries = await FileSystem.StorageAccessFramework.readDirectoryAsync(publicUri);
+      for (const uri of entries) {
+        const name = this.safName(uri);
+        const { extension, category } = this.categoryFor(name);
+        if (!extension) continue;
+        files.push({
+          id: uri,
+          name,
+          originalPath: uri,
+          newPath: `${category}/${name}`,
+          category,
+          size: 0,
+          extension,
+        });
+        categories[category] = (categories[category] || 0) + 1;
+      }
+    } else {
+      await this.ensureDownloadsFolder();
+      const entries = await storageService.readDirectory(this.downloadsDir);
+      for (const name of entries) {
+        const originalPath = `${this.downloadsDir}${name}`;
+        const info = await storageService.getInfo(originalPath);
+        if (info.isDirectory) continue;
+        const { extension, category } = this.categoryFor(name);
+        files.push({
+          id: originalPath,
+          name,
+          originalPath,
+          newPath: `${this.downloadsDir}${category}/${name}`,
+          category,
+          size: info.exists && 'size' in info && info.size ? info.size : 0,
+          extension,
+        });
+        categories[category] = (categories[category] || 0) + 1;
+      }
+    }
+
+    return {
+      id: `preview-${Date.now()}`,
+      timestamp: Date.now(),
+      totalFiles: files.length,
+      categories,
+      files,
+      status: 'active',
+      message: `Previewed ${files.length} file(s). No file has been moved yet.`,
+    };
+  }
+
+  private async organizePublicDirectory(
+    directoryUri: string,
+    excludedPaths: ReadonlySet<string>
+  ): Promise<OrganizeResult> {
     const store = useSevenStore.getState();
     const entries = await FileSystem.StorageAccessFramework.readDirectoryAsync(directoryUri);
     const categoryDirs = new Map<string, string>();
@@ -147,6 +247,7 @@ class FileOrganizerService {
     }
 
     for (const sourceUri of entries) {
+      if (excludedPaths.has(sourceUri)) continue;
       const name = this.safName(sourceUri);
       const parts = name.split('.');
       const ext = parts.length > 1 ? parts.pop()!.toLowerCase() : '';
@@ -180,7 +281,7 @@ class FileOrganizerService {
       status: 'active',
       message: `Organized ${moveList.length} public file(s) through Android scoped storage.`,
     };
-    await storageService.writeAsString(this.logFilePath, JSON.stringify(result, null, 2));
+    await this.recordJournal(result);
     store.setOrganizeResult(result);
     store.addTerminalLog(result.message, 'success');
     return result;
@@ -189,14 +290,15 @@ class FileOrganizerService {
   /**
    * Scans downloads, groups by category, moves files into subfolders, and records undo log
    */
-  public async organizeDownloads(): Promise<OrganizeResult> {
+  public async organizeDownloads(excluded: string[] = []): Promise<OrganizeResult> {
     const store = useSevenStore.getState();
+    const excludedPaths = new Set(excluded);
     store.setStatus('organizing');
     const publicUri = Platform.OS === 'android' ? store.config.organizerDirectoryUri : undefined;
     if (publicUri) {
       store.addTerminalLog('Scanning user-selected Android directory through SAF...', 'cmd');
       try {
-        return await this.organizePublicDirectory(publicUri);
+        return await this.organizePublicDirectory(publicUri, excludedPaths);
       } finally {
         store.setStatus('idle');
       }
@@ -219,6 +321,7 @@ class FileOrganizerService {
 
         for (const item of items) {
           const itemPath = `${this.downloadsDir}${item}`;
+          if (excludedPaths.has(itemPath)) continue;
           const itemInfo = await storageService.getInfo(itemPath);
 
           // Skip existing directories
@@ -230,13 +333,25 @@ class FileOrganizerService {
           const category = EXTENSION_CATEGORIES[ext] || 'Others';
 
           const targetSubdir = `${this.downloadsDir}${category}/`;
-          const targetPath = `${targetSubdir}${item}`;
+          let targetName = item;
 
           // Create category subfolder if not exists
           const targetDirInfo = await storageService.getInfo(targetSubdir);
           if (!targetDirInfo.exists) {
             await storageService.makeDirectory(targetSubdir);
             store.addTerminalLog(`Created subfolder: ${category}/`, 'info');
+          }
+
+          // Never overwrite an existing file silently. Keep the original name
+          // where possible, then append a familiar numeric suffix.
+          const dot = item.lastIndexOf('.');
+          const stem = dot > 0 ? item.slice(0, dot) : item;
+          const extensionWithDot = dot > 0 ? item.slice(dot) : '';
+          let targetPath = `${targetSubdir}${targetName}`;
+          let suffix = 2;
+          while ((await storageService.getInfo(targetPath)).exists) {
+            targetName = `${stem} (${suffix++})${extensionWithDot}`;
+            targetPath = `${targetSubdir}${targetName}`;
           }
 
           // Move file
@@ -272,7 +387,7 @@ class FileOrganizerService {
         };
 
         // Save undo journal to JSON file
-        await storageService.writeAsString(this.logFilePath, JSON.stringify(result, null, 2));
+        await this.recordJournal(result);
         store.addTerminalLog(`* Undo journal recorded: ${this.logFilePath}`, 'success');
         store.addTerminalLog(summaryMsg, 'success');
 
@@ -291,16 +406,22 @@ class FileOrganizerService {
     store.setStatus('organizing');
     store.addTerminalLog('Initiating Rollback from organizer_log.json...', 'cmd');
 
-    let log: OrganizeResult | null = store.lastOrganizeResult;
+    let history = await this.readHistory();
+    let log: OrganizeResult | null = history.find((entry) => entry.status === 'active') || null;
 
-    try {
-      const logFileInfo = await storageService.getInfo(this.logFilePath);
-      if (logFileInfo.exists) {
-        const raw = await storageService.readAsString(this.logFilePath);
-        log = JSON.parse(raw);
+    // Backward compatibility for installations with only the original
+    // single-journal file.
+    if (!log) {
+      try {
+        const logFileInfo = await storageService.getInfo(this.logFilePath);
+        if (logFileInfo.exists) {
+          const raw = await storageService.readAsString(this.logFilePath);
+          const legacy = JSON.parse(raw) as OrganizeResult;
+          if (legacy.status === 'active') log = legacy;
+        }
+      } catch (e) {
+        console.warn('Could not read organizer_log.json:', e);
       }
-    } catch (e) {
-      console.warn('Could not read organizer_log.json:', e);
     }
 
     if (!log || !log.files || log.files.length === 0) {
@@ -333,10 +454,18 @@ class FileOrganizerService {
     const undoMsg = `Rollback complete: Restored ${restored} files to root Downloads directory.`;
     store.addTerminalLog(undoMsg, 'success');
 
-    // Update log status to undone
+    // Update the bounded history, then expose the next reversible operation so
+    // Undo can be repeated instead of being limited to one session.
     log.status = 'undone';
-    await storageService.writeAsString(this.logFilePath, JSON.stringify(log, null, 2)).catch(() => {});
-    store.setOrganizeResult(log);
+    history = [log, ...history.filter((entry) => entry.id !== log!.id)].slice(0, 10);
+    await storageService
+      .writeAsString(this.historyFilePath, JSON.stringify(history, null, 2))
+      .catch(() => {});
+    const nextActive = history.find((entry) => entry.status === 'active');
+    await storageService
+      .writeAsString(this.logFilePath, JSON.stringify(nextActive || log, null, 2))
+      .catch(() => {});
+    store.setOrganizeResult(nextActive || log);
     store.setStatus('idle');
 
     return { restoredCount: restored, message: undoMsg };

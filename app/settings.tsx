@@ -20,6 +20,8 @@ import { HudHeader } from '../src/components/HudHeader';
 import { ConnectorCard } from '../src/components/ConnectorCard';
 import { SelfHealingModal } from '../src/components/SelfHealingModal';
 import { CapabilityHero } from '../src/components/CapabilityHero';
+import { ProviderHealthPanel } from '../src/components/ProviderHealthPanel';
+import { StorageGuardrails } from '../src/components/StorageGuardrails';
 import { gmailService } from '../src/services/gmailService';
 import { instagramService } from '../src/services/instagramService';
 import { briefingNotifications } from '../src/services/briefingNotificationService';
@@ -48,6 +50,7 @@ import {
   Brain,
   Bell,
   Monitor,
+  Trash2,
 } from 'lucide-react-native';
 
 const VOICE_LANGUAGES = [
@@ -85,6 +88,9 @@ export default function SettingsScreen() {
   const googleState = useSevenStore((s) => s.googleState);
   const instagramState = useSevenStore((s) => s.instagramState);
   const patchLogs = useSevenStore((s) => s.patchLogs);
+  const messageCount = useSevenStore((s) => s.chatHistory.length);
+  const sessionCount = useSevenStore((s) => s.chatSessions.length);
+  const routineCount = useSevenStore((s) => s.automationRoutines.length);
   const addTerminalLog = useSevenStore((s) => s.addTerminalLog);
 
   const palette = useTheme();
@@ -687,6 +693,14 @@ export default function SettingsScreen() {
                 ]
           }
         />
+        <ProviderHealthPanel
+          language={lang}
+          providers={[
+            { id: 'gemini', label: 'Gemini', key: geminiApiKey },
+            { id: 'openrouter', label: 'OpenRouter', key: openRouterKey },
+            { id: 'brave', label: 'Brave Search', key: braveSearchApiKey },
+          ]}
+        />
         <View style={styles.card}>
           <View style={styles.inputGroup}>
             <View style={styles.inputHeaderRow}>
@@ -712,6 +726,18 @@ export default function SettingsScreen() {
               // open over a shoulder, and the vault claim should be visible too.
               secureTextEntry
             />
+            {!!config.geminiApiKey && (
+              <TouchableOpacity
+                style={styles.removeSecretBtn}
+                onPress={async () => {
+                  setGeminiApiKey('');
+                  await setConfig({ geminiApiKey: '' });
+                }}
+              >
+                <Trash2 size={11} color={palette.error} />
+                <Text style={styles.removeSecretText}>{lang === 'fr' ? 'SUPPRIMER LA CLÉ' : 'REMOVE KEY'}</Text>
+              </TouchableOpacity>
+            )}
           </View>
 
           <View style={styles.inputGroup}>
@@ -762,9 +788,22 @@ export default function SettingsScreen() {
               autoCorrect={false}
               secureTextEntry
             />
+            {!!config.openRouterKey && (
+              <TouchableOpacity
+                style={styles.removeSecretBtn}
+                onPress={async () => {
+                  setOpenRouterKey('');
+                  await setConfig({ openRouterKey: '' });
+                }}
+              >
+                <Trash2 size={11} color={palette.error} />
+                <Text style={styles.removeSecretText}>{lang === 'fr' ? 'SUPPRIMER LA CLÉ' : 'REMOVE KEY'}</Text>
+              </TouchableOpacity>
+            )}
             <Text style={styles.oauthExplainerText}>
-              Used automatically when Gemini has no key configured or is unreachable —
-              real conversational answers instead of the local keyword engine.
+              {lang === 'fr'
+                ? 'Utilisé automatiquement si Gemini n’est pas configuré ou reste inaccessible — des réponses conversationnelles réelles plutôt que le moteur local par mots-clés.'
+                : 'Used automatically when Gemini has no key configured or is unreachable — real conversational answers instead of the local keyword engine.'}
             </Text>
           </View>
 
@@ -780,9 +819,28 @@ export default function SettingsScreen() {
               autoCorrect={false}
               secureTextEntry
             />
+            {!!config.braveSearchApiKey && (
+              <TouchableOpacity
+                style={styles.removeSecretBtn}
+                onPress={async () => {
+                  setBraveSearchApiKey('');
+                  await setConfig({ braveSearchApiKey: '' });
+                }}
+              >
+                <Trash2 size={11} color={palette.error} />
+                <Text style={styles.removeSecretText}>{lang === 'fr' ? 'SUPPRIMER LA CLÉ' : 'REMOVE KEY'}</Text>
+              </TouchableOpacity>
+            )}
             <Text style={styles.oauthExplainerText}>{t('settings.braveHint', lang)}</Text>
           </View>
         </View>
+
+        <StorageGuardrails
+          language={lang}
+          messages={messageCount}
+          sessions={sessionCount}
+          routines={routineCount}
+        />
 
         {/* Section 4: Long-term memory */}
         <Text style={styles.sectionHeading}>{t('settings.memory', lang).toUpperCase()}</Text>
@@ -1393,6 +1451,24 @@ const settingsStyles = (t: Palette) =>
       color: t.bgDeep,
       fontSize: 8.5,
       fontWeight: '800',
+    },
+    removeSecretBtn: {
+      minHeight: 36,
+      alignSelf: 'flex-end',
+      flexDirection: 'row',
+      alignItems: 'center',
+      gap: 5,
+      paddingHorizontal: 8,
+      marginTop: 5,
+      borderRadius: 7,
+      backgroundColor: t.bgDeep,
+      borderWidth: 1,
+      borderColor: t.error,
+    },
+    removeSecretText: {
+      color: t.error,
+      fontFamily: FONT.monoBold,
+      fontSize: 8.5,
     },
     textInput: {
       backgroundColor: t.bgDeep,

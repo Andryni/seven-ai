@@ -21,6 +21,7 @@ import { haptics } from '../src/services/hapticsService';
 import { soundFx } from '../src/services/soundFxService';
 import { useTheme, useThemeStyles } from '../src/theme/theme';
 import type { Palette } from '../src/theme/theme';
+import type { OrganizeResult } from '../src/types';
 import { t } from '../src/theme/i18n';
 import {
   FolderSync,
@@ -37,6 +38,8 @@ import {
   HardDrive,
   FolderOpen,
   FolderLock,
+  Square,
+  CheckSquare2,
 } from 'lucide-react-native';
 
 export default function OrganizerScreen() {
@@ -51,6 +54,8 @@ export default function OrganizerScreen() {
 
   const [loading, setLoading] = useState(false);
   const [undoLoading, setUndoLoading] = useState(false);
+  const [preview, setPreview] = useState<OrganizeResult | null>(null);
+  const [excludedPaths, setExcludedPaths] = useState<string[]>([]);
 
   useEffect(() => {
     fileOrganizer.ensureDownloadsFolder().catch(() => {});
@@ -68,10 +73,19 @@ export default function OrganizerScreen() {
 
   const handleOrganize = async () => {
     haptics.light();
-    soundFx.playLaserWhoosh();
     setLoading(true);
     try {
-      await fileOrganizer.organizeDownloads();
+      if (!preview) {
+        const plan = await fileOrganizer.previewOrganization();
+        setPreview(plan);
+        setExcludedPaths([]);
+        addTerminalLog(plan.message, 'info');
+        return;
+      }
+      soundFx.playLaserWhoosh();
+      await fileOrganizer.organizeDownloads(excludedPaths);
+      setPreview(null);
+      setExcludedPaths([]);
       haptics.success();
       soundFx.playPatchSuccess();
     } catch (e: any) {
@@ -80,6 +94,13 @@ export default function OrganizerScreen() {
     } finally {
       setLoading(false);
     }
+  };
+
+  const togglePlannedFile = (path: string) => {
+    haptics.light();
+    setExcludedPaths((current) =>
+      current.includes(path) ? current.filter((item) => item !== path) : [...current, path]
+    );
   };
 
   const handleUndo = async () => {
@@ -230,7 +251,11 @@ export default function OrganizerScreen() {
             >
               <FolderSync size={15} color={palette.bgDeep} />
               <Text style={styles.primaryOrganizeText}>
-                {loading ? t('organizer.organizing', lang) : t('organizer.organize', lang).toUpperCase()}
+                {loading
+                  ? t('organizer.organizing', lang)
+                  : preview
+                    ? t('organizer.confirmPlan', lang)
+                    : t('organizer.previewPlan', lang)}
               </Text>
               {loading && <TypingDots color={palette.bgDeep} size={4} />}
             </TouchableOpacity>
@@ -254,6 +279,50 @@ export default function OrganizerScreen() {
           </View>
         </View>
         </ScreenReveal>
+
+        {preview && (
+          <ScreenReveal index={3}>
+            <View style={styles.planCard}>
+              <View style={styles.planHeader}>
+                <View>
+                  <Text style={styles.planTitle}>{t('organizer.planTitle', lang)}</Text>
+                  <Text style={styles.planMeta}>
+                    {preview.files.length - excludedPaths.length} / {preview.files.length} {t('organizer.files', lang)}
+                  </Text>
+                </View>
+                <TouchableOpacity
+                  style={styles.cancelPlanBtn}
+                  onPress={() => {
+                    setPreview(null);
+                    setExcludedPaths([]);
+                  }}
+                >
+                  <Text style={styles.cancelPlanText}>{t('organizer.cancelPlan', lang)}</Text>
+                </TouchableOpacity>
+              </View>
+              {preview.files.map((file) => {
+                const included = !excludedPaths.includes(file.originalPath);
+                return (
+                  <TouchableOpacity
+                    key={file.originalPath}
+                    style={[styles.planRow, !included && styles.planRowExcluded]}
+                    accessibilityRole="checkbox"
+                    accessibilityState={{ checked: included }}
+                    onPress={() => togglePlannedFile(file.originalPath)}
+                  >
+                    {included ? (
+                      <CheckSquare2 size={17} color={palette.success} />
+                    ) : (
+                      <Square size={17} color={palette.textFaint} />
+                    )}
+                    <Text style={styles.planFileName} numberOfLines={1}>{file.name}</Text>
+                    <Text style={styles.planDestination}>{file.category}/</Text>
+                  </TouchableOpacity>
+                );
+              })}
+            </View>
+          </ScreenReveal>
+        )}
 
         {/* Live Terminal Log Component */}
         <ScreenReveal index={2}>
@@ -447,6 +516,63 @@ const organizerStyles = (t: Palette) =>
       fontSize: 10,
       fontWeight: '800',
       letterSpacing: 0.5,
+    },
+    planCard: {
+      backgroundColor: t.bgElevated,
+      borderRadius: 12,
+      borderWidth: 1,
+      borderColor: t.borderStrong,
+      padding: 12,
+      marginBottom: 12,
+    },
+    planHeader: {
+      flexDirection: 'row',
+      justifyContent: 'space-between',
+      alignItems: 'center',
+      marginBottom: 8,
+    },
+    planTitle: {
+      color: t.text,
+      fontFamily: FONT.uiMedium,
+      fontSize: 15,
+    },
+    planMeta: {
+      color: t.accent,
+      fontFamily: FONT.mono,
+      fontSize: 10,
+      marginTop: 2,
+    },
+    cancelPlanBtn: {
+      minHeight: 36,
+      justifyContent: 'center',
+      paddingHorizontal: 10,
+      borderRadius: 8,
+      backgroundColor: t.accentSoft,
+    },
+    cancelPlanText: {
+      color: t.error,
+      fontFamily: FONT.monoBold,
+      fontSize: 9,
+    },
+    planRow: {
+      minHeight: 44,
+      flexDirection: 'row',
+      alignItems: 'center',
+      gap: 9,
+      borderTopWidth: 1,
+      borderTopColor: t.border,
+    },
+    planRowExcluded: { opacity: 0.45 },
+    planFileName: {
+      flex: 1,
+      color: t.text,
+      fontFamily: FONT.ui,
+      fontSize: 13,
+    },
+    planDestination: {
+      color: t.accent,
+      fontFamily: FONT.mono,
+      fontSize: 10,
     },
     sectionHeader: {
       fontFamily: FONT.mono,

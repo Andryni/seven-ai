@@ -47,4 +47,12 @@ jobs:
             trap 'kill "$METRO_PID" 2>/dev/null || true; cat /tmp/seven-metro.log' EXIT
             timeout 90 bash -c 'until curl -fsS http://127.0.0.1:8081/status | grep -q packager-status:running; do sleep 2; done'
             adb reverse tcp:8081 tcp:8081
-            "$HOME/.maestro/bin/maestro" test .maestro/dashboard-smoke.yaml
+            "$HOME/.maestro/bin/maestro" test --test-output-dir /tmp/maestro-results .maestro/dashboard-smoke.yaml
+      - name: Upload Maestro screenshots and reports
+        if: always()
+        uses: actions/upload-artifact@v4
+        with:
+          name: maestro-android-results
+          path: /tmp/maestro-results
+          if-no-files-found: ignore
+          retention-days: 14

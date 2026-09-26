@@ -32,6 +32,33 @@ describe('fileOrganizer', () => {
     expect(files).toEqual([]);
   }, 15000);
 
+  test('preview is non-destructive and exclusions are honored on confirmation', async () => {
+    await storageService.writeAsString(`${DOWNLOADS}keep.pdf`, 'PDFDATA');
+    await storageService.writeAsString(`${DOWNLOADS}move.png`, 'PNGDATA');
+
+    const plan = await fileOrganizer.previewOrganization();
+    expect(plan.totalFiles).toBe(2);
+    expect((await storageService.getInfo(`${DOWNLOADS}keep.pdf`)).exists).toBe(true);
+    expect((await storageService.getInfo(`${DOWNLOADS}move.png`)).exists).toBe(true);
+
+    const excluded = plan.files.find((file) => file.name === 'keep.pdf')!;
+    const result = await fileOrganizer.organizeDownloads([excluded.originalPath]);
+    expect(result.totalFiles).toBe(1);
+    expect((await storageService.getInfo(`${DOWNLOADS}keep.pdf`)).exists).toBe(true);
+    expect((await storageService.getInfo(`${DOWNLOADS}Images/move.png`)).exists).toBe(true);
+  }, 20000);
+
+  test('preserves both files when a destination name already exists', async () => {
+    await storageService.makeDirectory(`${DOWNLOADS}Documents/`);
+    await storageService.writeAsString(`${DOWNLOADS}Documents/report.pdf`, 'OLD');
+    await storageService.writeAsString(`${DOWNLOADS}report.pdf`, 'NEW');
+
+    const result = await fileOrganizer.organizeDownloads();
+    expect(result.totalFiles).toBe(1);
+    expect((await storageService.getInfo(`${DOWNLOADS}Documents/report.pdf`)).exists).toBe(true);
+    expect((await storageService.getInfo(`${DOWNLOADS}Documents/report (2).pdf`)).exists).toBe(true);
+  });
+
   test('organizeDownloads moves files into category subfolders and records the journal', async () => {
     // Add real test fixtures; production no longer seeds staged demo files.
     await storageService.writeAsString(`${DOWNLOADS}photo.png`, 'PNGDATA');
@@ -69,6 +96,18 @@ describe('fileOrganizer', () => {
     expect(restored.exists).toBe(true);
     expect((await storageService.getInfo(`${DOWNLOADS}Video/clip.mp4`)).exists).toBe(false);
   }, 20000);
+
+  test('keeps a bounded history so multiple organization sessions can be undone', async () => {
+    await storageService.writeAsString(`${DOWNLOADS}first.png`, 'ONE');
+    await fileOrganizer.organizeDownloads();
+    await storageService.writeAsString(`${DOWNLOADS}second.pdf`, 'TWO');
+    await fileOrganizer.organizeDownloads();
+
+    expect((await fileOrganizer.undoLastOrganization()).restoredCount).toBe(1);
+    expect((await storageService.getInfo(`${DOWNLOADS}second.pdf`)).exists).toBe(true);
+    expect((await fileOrganizer.undoLastOrganization()).restoredCount).toBe(1);
+    expect((await storageService.getInfo(`${DOWNLOADS}first.png`)).exists).toBe(true);
+  });
 
   test('organizeDownloads propagates failures instead of fabricating results', async () => {
     await storageService.writeAsString(`${DOWNLOADS}photo.png`, 'PNGDATA');

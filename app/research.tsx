@@ -34,12 +34,16 @@ import {
   SearchCheck,
 } from 'lucide-react-native';
 
-const PRESET_TOPICS = [
-  'research on AI and create a PDF',
-  'Autonomous Agents & AST Self-Healing Architecture',
-  'Quantum Computing & Post-Quantum Cryptography',
-  'Edge Neural Processing on Android 15',
-];
+function sourceProvider(url: string): string {
+  try {
+    const host = new URL(url).hostname.replace(/^www\./, '');
+    if (host.includes('wikipedia.org')) return 'WIKIPEDIA';
+    if (host.includes('doi.org') || host.includes('crossref.org')) return 'CROSSREF';
+    return host.toUpperCase();
+  } catch {
+    return 'WEB';
+  }
+}
 
 export default function ResearchScreen() {
   const router = useRouter();
@@ -48,8 +52,26 @@ export default function ResearchScreen() {
   const researchDocs = useSevenStore((s) => s.researchDocs);
   const lang = useSevenStore((s) => s.config.language ?? 'en');
   const addTerminalLog = useSevenStore((s) => s.addTerminalLog);
+  const presetTopics =
+    lang === 'fr'
+      ? [
+          'Rechercher les avancées récentes en IA et créer un PDF',
+          'Agents autonomes et architecture de diagnostic AST',
+          'Informatique quantique et cryptographie post-quantique',
+          'Traitement neuronal en périphérie sur Android 15',
+        ]
+      : [
+          'Research recent AI advances and create a PDF',
+          'Autonomous agents and AST diagnostic architecture',
+          'Quantum computing and post-quantum cryptography',
+          'Edge neural processing on Android 15',
+        ];
 
-  const [topic, setTopic] = useState('research on AI and create a PDF');
+  const [topic, setTopic] = useState(
+    lang === 'fr'
+      ? 'Rechercher les avancées récentes en IA et créer un PDF'
+      : 'Research recent AI advances and create a PDF'
+  );
   const [isSynthesizing, setIsSynthesizing] = useState(false);
   const [activeDoc, setActiveDoc] = useState<ResearchDocument | null>(
     researchDocs.length > 0 ? researchDocs[0] : null
@@ -169,7 +191,7 @@ export default function ResearchScreen() {
             style={styles.presetScroll}
             contentContainerStyle={styles.presetContainer}
           >
-            {PRESET_TOPICS.map((p, i) => (
+            {presetTopics.map((p, i) => (
               <TouchableOpacity
                 key={i}
                 style={styles.presetChip}
@@ -201,7 +223,7 @@ export default function ResearchScreen() {
                 <View>
                   <Text style={styles.docTitleText}>{currentDoc.title}</Text>
                   <Text style={styles.docMetaText}>
-                    Topic: {currentDoc.topic} • Generated: {new Date(currentDoc.timestamp).toLocaleTimeString()}
+                    {lang === 'fr' ? 'Sujet' : 'Topic'}: {currentDoc.topic} • {lang === 'fr' ? 'Généré' : 'Generated'}: {new Date(currentDoc.timestamp).toLocaleTimeString()}
                   </Text>
                 </View>
               </View>
@@ -229,20 +251,41 @@ export default function ResearchScreen() {
             </View>
 
             <View style={styles.sourcesBox}>
-              <Text style={styles.summaryLabel}>
-                {currentDoc.sources?.length
-                  ? `${t('research.sources', lang)} (${currentDoc.sources.length})`
-                  : t('research.unverified', lang)}
-              </Text>
+              <View style={styles.sourceCoverageHeader}>
+                <Text style={styles.summaryLabel}>
+                  {currentDoc.sources?.length
+                    ? `${t('research.sources', lang)} (${currentDoc.sources.length})`
+                    : t('research.unverified', lang)}
+                </Text>
+                {!!currentDoc.sources?.length && (
+                  <Text style={styles.coverageText}>
+                    {Math.min(100, currentDoc.sources.length * 20)}% {t('research.coverage', lang)}
+                  </Text>
+                )}
+              </View>
+              {!!currentDoc.sources?.length && (
+                <View style={styles.coverageTrack}>
+                  <View
+                    style={[
+                      styles.coverageFill,
+                      { width: `${Math.min(100, currentDoc.sources.length * 20)}%` },
+                    ]}
+                  />
+                </View>
+              )}
               {currentDoc.sources?.length ? (
                 currentDoc.sources.map((source, index) => (
                   <TouchableOpacity
                     key={`${source.url}-${index}`}
+                    style={styles.sourceRow}
                     accessibilityRole="link"
                     accessibilityLabel={`Open source ${index + 1}: ${source.title}`}
                     onPress={() => Linking.openURL(source.url).catch(() => {})}
                   >
-                    <Text style={styles.sourceLink}>[{index + 1}] {source.title}</Text>
+                    <View style={styles.sourceProviderBadge}>
+                      <Text style={styles.sourceProviderText}>{sourceProvider(source.url)}</Text>
+                    </View>
+                    <Text style={styles.sourceLink} numberOfLines={2}>[{index + 1}] {source.title}</Text>
                   </TouchableOpacity>
                 ))
               ) : (
