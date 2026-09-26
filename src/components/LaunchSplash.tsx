@@ -9,7 +9,7 @@ import { useReducedMotion } from '../hooks/useReducedMotion';
 const { width: SCREEN_WIDTH } = Dimensions.get('window');
 
 const BOOT_LINES = [
-  'SEVEN_OS // KERNEL v3.2 BOOTING...',
+  'SEVEN_OS // KERNEL v3.3 BOOTING...',
   'NEURAL CORE ................. ONLINE',
   'ORBITAL HUD ARRAY ........... CALIBRATED',
   'AUDIO DSP MULTILANG ......... READY',
@@ -199,7 +199,7 @@ export const LaunchSplash: React.FC<LaunchSplashProps> = ({ onFinish }) => {
         <Animated.View style={[styles.progressFill, { width: barWidth }]} />
       </View>
 
-      <Text style={styles.footerText}>SEVEN_OS // KERNEL v3.2</Text>
+      <Text style={styles.footerText}>SEVEN_OS // KERNEL v3.3</Text>
     </Animated.View>
   );
 };

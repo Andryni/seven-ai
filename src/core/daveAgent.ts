@@ -61,7 +61,7 @@ class DaveAgentService {
     // Ensure directory
     await storageService.ensureDirectory(projectDir);
 
-    let files: { 'index.html': string; 'style.css': string; 'script.js': string } = {
+    let files: DaveProject['files'] = {
       'index.html': '',
       'style.css': '',
       'script.js': '',
@@ -128,6 +128,30 @@ Output MUST be a single valid JSON object with EXACTLY these 3 keys:
       }
     }
 
+    const lowerPrompt = prompt.toLowerCase();
+    const projectKind: NonNullable<DaveProject['projectKind']> = lowerPrompt.includes('python')
+      ? 'python'
+      : lowerPrompt.includes('expo') || lowerPrompt.includes('react native')
+        ? 'expo'
+        : lowerPrompt.includes('node') || lowerPrompt.includes('api')
+          ? 'node'
+          : lowerPrompt.includes('react')
+            ? 'react'
+            : 'static-web';
+    const commands: DaveProject['commands'] = projectKind === 'python'
+      ? { start: 'python main.py', test: 'python -m unittest' }
+      : projectKind === 'node' || projectKind === 'react' || projectKind === 'expo'
+        ? { install: 'npm install', start: projectKind === 'expo' ? 'npx expo start' : 'npm start', test: 'npm test' }
+        : { start: 'Open index.html', test: 'SEVEN static checks' };
+    if (projectKind === 'python') {
+      files['main.py'] = `\"\"\"${prompt.replace(/\"/g, '\\"')}\"\"\"\n\ndef main():\n    print(\"DAVE Python project ready\")\n\nif __name__ == \"__main__\":\n    main()\n`;
+      files['test_main.py'] = 'import unittest\nimport main\n\nclass ProjectTest(unittest.TestCase):\n    def test_main_exists(self):\n        self.assertTrue(callable(main.main))\n';
+      files['requirements.txt'] = '';
+    } else if (projectKind !== 'static-web') {
+      files['package.json'] = JSON.stringify({ name: resolvedName, private: true, scripts: { start: projectKind === 'expo' ? 'expo start' : projectKind === 'node' ? 'node server.js' : 'vite', test: 'node --test' } }, null, 2);
+      if (projectKind === 'node') files['server.js'] = 'const http = require("http");\nhttp.createServer((req,res)=>{res.setHeader("content-type","application/json");res.end(JSON.stringify({status:"ok"}));}).listen(process.env.PORT || 3000);\n';
+    }
+
     // Write files with Self-Healing observability wrap (errors propagate)
     await selfHealing.wrapExecution(
       'Write index.html',
@@ -159,6 +183,14 @@ Output MUST be a single valid JSON object with EXACTLY these 3 keys:
       }
     );
 
+    for (const [fileName, content] of Object.entries(files)) {
+      if (['index.html', 'style.css', 'script.js'].includes(fileName)) continue;
+      await selfHealing.wrapExecution(`Write ${fileName}`, `${resolvedName}/${fileName}`, content, async () => {
+        store.addTerminalLog(`+ Writing file ${fileName}`, 'cmd');
+        await storageService.writeAsString(`${projectDir}${fileName}`, content);
+      });
+    }
+
     store.addTerminalLog(`* Synthesized AST verification [OK]`, 'success');
     store.addTerminalLog(`Project mounted on SevenUploads/${resolvedName}/`, 'success');
 
@@ -170,6 +202,9 @@ Output MUST be a single valid JSON object with EXACTLY these 3 keys:
       files,
       folderPath: projectDir,
       previewHtml: files['index.html'],
+      projectKind,
+      commands,
+      versions: [{ id: `v-${Date.now()}`, timestamp: Date.now(), label: 'Initial build', files: { ...files } }],
     };
 
     store.addDaveProject(projectRecord);
@@ -239,11 +274,16 @@ Apply ONLY the requested change, keeping everything else intact and consistent. 
         });
       }
 
+      const now = Date.now();
       const updates: Partial<DaveProject> = {
         files,
         previewHtml: files['index.html'],
         prompt: `${project.prompt} | ${instruction}`,
-        timestamp: Date.now(),
+        timestamp: now,
+        versions: [
+          { id: `v-${now}`, timestamp: now, label: instruction.slice(0, 60), files: { ...files } },
+          ...(project.versions || [{ id: `v-${project.timestamp}`, timestamp: project.timestamp, label: 'Imported baseline', files: { ...project.files } }]),
+        ].slice(0, 20),
       };
 
       store.updateDaveProject(project.id, updates);
@@ -259,6 +299,74 @@ Apply ONLY the requested change, keeping everything else intact and consistent. 
     }
   }
 
+  public async saveProjectFiles(
+    project: DaveProject,
+    files: DaveProject['files'],
+    label = 'Manual edit'
+  ): Promise<DaveProject> {
+    for (const [name, content] of Object.entries(files)) {
+      await storageService.writeAsString(`${project.folderPath}${name}`, content);
+    }
+    const now = Date.now();
+    const updated: DaveProject = {
+      ...project,
+      files,
+      previewHtml: files['index.html'],
+      timestamp: now,
+      versions: [
+        { id: `v-${now}`, timestamp: now, label, files: { ...files } },
+        ...(project.versions || []),
+      ].slice(0, 20),
+    };
+    useSevenStore.getState().updateDaveProject(project.id, updated);
+    return updated;
+  }
+
+  public async restoreVersion(project: DaveProject, versionId: string): Promise<DaveProject> {
+    const version = project.versions?.find((item) => item.id === versionId);
+    if (!version) throw new Error('Project version not found.');
+    const files = version.files as DaveProject['files'];
+    return this.saveProjectFiles(project, files, `Restored ${version.label}`);
+  }
+
+  public runProjectTests(project: DaveProject): NonNullable<DaveProject['lastTestReport']> {
+    const html = project.files['index.html'] || '';
+    const css = project.files['style.css'] || '';
+    const js = project.files['script.js'] || '';
+    const checks = [
+      { name: 'HTML document', ok: /<html[\s>]/i.test(html) && /<\/html>/i.test(html), detail: 'Opening and closing HTML root' },
+      { name: 'Stylesheet link', ok: /style\.css/i.test(html), detail: 'index.html references style.css' },
+      { name: 'Script link', ok: /script\.js/i.test(html), detail: 'index.html references script.js' },
+      { name: 'Responsive viewport', ok: /name=["']viewport["']/i.test(html), detail: 'Mobile viewport metadata' },
+      { name: 'CSS payload', ok: css.trim().length > 100, detail: `${css.length} CSS characters` },
+      { name: 'JavaScript syntax shape', ok: (js.match(/{/g)?.length || 0) === (js.match(/}/g)?.length || 0), detail: 'Balanced block braces' },
+    ];
+    const report = {
+      passed: checks.filter((check) => check.ok).length,
+      failed: checks.filter((check) => !check.ok).length,
+      checks,
+      timestamp: Date.now(),
+    };
+    useSevenStore.getState().updateDaveProject(project.id, { lastTestReport: report });
+    useSevenStore.getState().addTerminalLog(`TESTS: ${report.passed} passed / ${report.failed} failed`, report.failed ? 'warn' : 'success');
+    return report;
+  }
+
+  public diffVersions(project: DaveProject, olderId: string, newerId: string): { file: string; added: number; removed: number }[] {
+    const older = project.versions?.find((version) => version.id === olderId);
+    const newer = project.versions?.find((version) => version.id === newerId);
+    if (!older || !newer) return [];
+    const names = new Set([...Object.keys(older.files), ...Object.keys(newer.files)]);
+    return [...names].map((file) => {
+      const before = new Set((older.files[file] || '').split('\n'));
+      const after = new Set((newer.files[file] || '').split('\n'));
+      return {
+        file,
+        added: [...after].filter((line) => !before.has(line)).length,
+        removed: [...before].filter((line) => !after.has(line)).length,
+      };
+    });
+  }
 }
 
 export const daveAgent = DaveAgentService.getInstance();

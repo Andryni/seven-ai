@@ -3,11 +3,15 @@ appId: com.seven.ai
 # Smoke test: the app boots to the dashboard, the HUD exposes the active-brain
 # readout, the module deck renders, and the chat screen opens.
 #
-# Text assertions are bilingual regexes ("EN|FR") so the flow passes whatever
-# the interface language is set to. Assumes a configured install: the app
-# redirects to the onboarding wizard until an API key has been saved, and
-# onboarding needs a real key, which is out of scope for CI.
-- launchApp
+# Text assertions are bilingual. A clean CI install enters onboarding, so the
+# flow explicitly takes the honest local-engine quick path when it is visible.
+- launchApp:
+    clearState: true
+- runFlow:
+    when:
+      visible: "TRY IT NOW — SKIP SETUP|ESSAYER MAINTENANT — PASSER LA CONFIG"
+    commands:
+      - tapOn: "TRY IT NOW — SKIP SETUP|ESSAYER MAINTENANT — PASSER LA CONFIG"
 - assertVisible: "SYSTEMS NOMINAL|SYSTÈMES NOMINAUX"
 
 # Which brain answers is permanently visible in the HUD (Gemini / OpenRouter /

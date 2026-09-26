@@ -6,6 +6,13 @@ export interface MemoryFact {
   content: string;
   createdAt: number;
   updatedAt: number;
+  /** User-visible provenance and ranking metadata for cognitive memory. */
+  source?: 'user' | 'conversation' | 'import';
+  importance?: number;
+  confidence?: number;
+  expiresAt?: number | null;
+  /** Bidirectional local semantic links to related memories. */
+  relatedIds?: string[];
 }
 
 const MEMORY_FILE_PATH = `${FileSystem.documentDirectory || ''}seven_memory_rag.json`;
@@ -25,7 +32,17 @@ class MemoryService {
       const fileInfo = await FileSystem.getInfoAsync(MEMORY_FILE_PATH);
       if (fileInfo.exists) {
         const raw = await FileSystem.readAsStringAsync(MEMORY_FILE_PATH);
-        this.facts = JSON.parse(raw);
+        const now = Date.now();
+        this.facts = (JSON.parse(raw) as MemoryFact[])
+          .filter((fact) => !fact.expiresAt || fact.expiresAt > now)
+          .map((fact) => ({
+            ...fact,
+            source: fact.source || 'user',
+            importance: fact.importance ?? 0.6,
+            confidence: fact.confidence ?? 1,
+            expiresAt: fact.expiresAt ?? null,
+            relatedIds: fact.relatedIds ?? [],
+          }));
       } else {
         this.facts = [];
       }
@@ -47,7 +64,11 @@ class MemoryService {
   /**
    * Save or update an enduring fact in long-term memory
    */
-  public async rememberFact(content: string, category: MemoryFact['category'] = 'fact'): Promise<MemoryFact> {
+  public async rememberFact(
+    content: string,
+    category: MemoryFact['category'] = 'fact',
+    metadata: Pick<MemoryFact, 'source' | 'importance' | 'confidence' | 'expiresAt'> = {}
+  ): Promise<MemoryFact> {
     await this.loadFacts();
     const clean = content.trim();
 
@@ -62,14 +83,33 @@ class MemoryService {
       return this.facts[existingIndex];
     }
 
+    const tokens = new Set(clean.toLowerCase().replace(/[^\w\s\u00C0-\u017F]/g, ' ').split(/\s+/).filter((token) => token.length > 3));
+    const related = this.facts
+      .map((fact) => ({
+        fact,
+        overlap: [...tokens].filter((token) => fact.content.toLowerCase().includes(token)).length,
+      }))
+      .filter((entry) => entry.overlap >= 2 || (entry.overlap >= 1 && entry.fact.category === category))
+      .sort((a, b) => b.overlap - a.overlap)
+      .slice(0, 5)
+      .map((entry) => entry.fact.id);
+    const newId = `fact_${Date.now()}_${Math.random().toString(36).slice(2, 6)}`;
     const newFact: MemoryFact = {
-      id: `fact_${Date.now()}_${Math.random().toString(36).slice(2, 6)}`,
+      id: newId,
       category,
       content: clean,
       createdAt: Date.now(),
       updatedAt: Date.now(),
+      source: metadata.source || 'user',
+      importance: Math.max(0, Math.min(1, metadata.importance ?? 0.6)),
+      confidence: Math.max(0, Math.min(1, metadata.confidence ?? 1)),
+      expiresAt: metadata.expiresAt ?? null,
+      relatedIds: related,
     };
 
+    this.facts = this.facts.map((fact) => related.includes(fact.id)
+      ? { ...fact, relatedIds: [...new Set([...(fact.relatedIds || []), newId])].slice(0, 5) }
+      : fact);
     this.facts.push(newFact);
     await this.persist();
     return newFact;
@@ -107,7 +147,9 @@ class MemoryService {
           score += 1;
         }
       }
-      return { content: fact.content, score };
+      const importance = fact.importance ?? 0.6;
+      const confidence = fact.confidence ?? 1;
+      return { content: fact.content, score: score * (0.65 + importance * 0.35) * confidence };
     });
 
     return scored
@@ -159,10 +201,22 @@ class MemoryService {
   public async deleteFact(id: string): Promise<boolean> {
     await this.loadFacts();
     const before = this.facts.length;
-    this.facts = this.facts.filter((f) => f.id !== id);
+    this.facts = this.facts
+      .filter((f) => f.id !== id)
+      .map((fact) => ({ ...fact, relatedIds: (fact.relatedIds || []).filter((relatedId) => relatedId !== id) }));
     if (this.facts.length === before) return false;
     await this.persist();
     return true;
+  }
+
+  public async importFacts(facts: MemoryFact[]): Promise<void> {
+    const now = Date.now();
+    this.facts = facts
+      .filter((fact) => fact && typeof fact.id === 'string' && typeof fact.content === 'string')
+      .filter((fact) => !fact.expiresAt || fact.expiresAt > now)
+      .slice(0, 1000);
+    this.isLoaded = true;
+    await this.persist();
   }
 
   /**

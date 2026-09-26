@@ -24,7 +24,11 @@ import { BottomNav } from '../src/components/BottomNav';
 import { TapScale } from '../src/components/TapScale';
 import { ScreenReveal } from '../src/components/ScreenReveal';
 import { AudioVisualizer } from '../src/components/AudioVisualizer';
+import { HypercoreLiveMatrix } from '../src/components/HypercoreLiveMatrix';
+import type { LiveNewsItem, LiveWeather } from '../src/services/liveInfoService';
 import { useVoice, isMicrophoneBusy } from '../src/hooks/useVoice';
+import { useAdaptivePerformance } from '../src/hooks/useAdaptivePerformance';
+import { agentForTool, operationService } from '../src/services/operationService';
 import { useTheme, useThemeStyles } from '../src/theme/theme';
 import type { Palette } from '../src/theme/theme';
 import { t } from '../src/theme/i18n';
@@ -62,7 +66,7 @@ import {
 let greetedThisLaunch = false;
 
 /** Module ids, in deck order. The persisted layout is keyed by these. */
-const DECK_IDS = ['briefing', 'dave', 'organizer', 'research', 'routines', 'memory', 'selfheal', 'dock'];
+const DECK_IDS = ['autonomy', 'briefing', 'intelligence', 'operations', 'chat', 'dave', 'organizer', 'research', 'routines', 'memory', 'selfheal', 'dock'];
 
 /**
  * What Gideon says when the app opens.
@@ -138,34 +142,65 @@ export default function DashboardScreen() {
   const addChatMessage = useSevenStore((s) => s.addChatMessage);
   const updateChatMessage = useSevenStore((s) => s.updateChatMessage);
   const addTerminalLog = useSevenStore((s) => s.addTerminalLog);
+  const terminalLogs = useSevenStore((s) => s.terminalLogs);
 
   const palette = useTheme();
   const styles = useThemeStyles(dashboardStyles);
   const language = config.language ?? 'en';
+  const adaptivePerformance = useAdaptivePerformance(
+    config.avatarQuality ?? 'balanced',
+    config.adaptivePerformanceEnabled !== false
+  );
 
   const [showSelfHealingModal, setShowSelfHealingModal] = useState(false);
   const [showBriefingModal, setShowBriefingModal] = useState(false);
   const [isProcessing, setIsProcessing] = useState(false);
+  const isProcessingRef = useRef(false);
   const [isOffline, setIsOffline] = useState(false);
   const [queuedCommand, setQueuedCommand] = useState<string | null>(null);
   // ARRANGE mode: the module deck stops navigating and starts moving.
   const [arranging, setArranging] = useState(false);
   /** '' until the launch greeting has been picked. */
   const [greetingLine, setGreetingLine] = useState('');
+  const [liveWeather, setLiveWeather] = useState<LiveWeather | null>(null);
+  const [liveNews, setLiveNews] = useState<LiveNewsItem[]>([]);
 
   const queuedRef = useRef<string | null>(null);
 
   const { isRecording, isAudible, spokenText, speak, startListening, stopListening, voiceMode } =
     useVoice();
 
+  // Keep the command matrix live without turning it into a hot polling loop.
+  // The same cached snapshot powers weather and intelligence surfaces.
+  useEffect(() => {
+    let active = true;
+    const refresh = () => {
+      void fetchLiveBriefing(language)
+        .then(({ weather, news }) => {
+          if (!active) return;
+          setLiveWeather(weather);
+          setLiveNews(news);
+        })
+        .catch(() => {});
+    };
+    refresh();
+    const timer = setInterval(refresh, 10 * 60 * 1000);
+    return () => {
+      active = false;
+      clearInterval(timer);
+    };
+  }, [language, config.city]);
+
   const handleSend = useCallback(
     async (textToSend?: string) => {
       const query = textToSend;
-      if (!query?.trim() || isProcessing) return;
+      if (!query?.trim() || isProcessingRef.current) return;
+      isProcessingRef.current = true;
 
       // Offline: queue the command instead of failing silently.
       const net = await NetInfo.fetch();
       if (!net.isConnected) {
+        isProcessingRef.current = false;
         queuedRef.current = query;
         setQueuedCommand(query);
         addTerminalLog(`OFFLINE: "${query.slice(0, 40)}" queued until reconnect.`, 'warn');
@@ -176,6 +211,12 @@ export default function DashboardScreen() {
       haptics.light();
       soundFx.playTelemetryPing();
       setIsProcessing(true);
+      const operationId = operationService.begin({
+        kind: 'dashboard-command',
+        title: query.slice(0, 90),
+        steps: ['Interpret', 'Delegate', 'Execute', 'Verify', 'Report'],
+      });
+      operationService.progress(operationId, 18, 'Interpreting dashboard command', 0);
 
       addChatMessage({ sender: 'user', text: query });
 
@@ -185,22 +226,31 @@ export default function DashboardScreen() {
 
       try {
         let acc = '';
+        let lastStreamPaintAt = 0;
 
         const result = await sevenAgent.chatStream(query, (token) => {
           if (token) {
             acc += token;
-            updateChatMessage(reply.id, { text: acc });
+            const now = Date.now();
+            if (now - lastStreamPaintAt >= 80) {
+              lastStreamPaintAt = now;
+              updateChatMessage(reply.id, { text: acc });
+            }
           }
         });
 
+        operationService.assign(operationId, agentForTool(result.toolCall?.name));
+        operationService.progress(operationId, 84, 'Verifying specialist output', 3);
         updateChatMessage(reply.id, {
           text: result.text,
           toolCall: result.toolCall,
           terminalLogs: result.terminalLogs,
         });
+        operationService.complete(operationId, result.toolCall?.summary || 'Command completed');
 
         if (config.voiceEnabled) speak(result.text);
       } catch (e: any) {
+        operationService.fail(operationId, e?.message || String(e));
         haptics.error();
         addTerminalLog(`EXECUTION ERROR: ${e?.message || e}`, 'error');
         // Fill the pending placeholder bubble instead of appending a new one,
@@ -212,11 +262,11 @@ export default function DashboardScreen() {
               : 'Encountered an exception while processing your directive. Auto-healing matrix has been dispatched.',
         });
       } finally {
+        isProcessingRef.current = false;
         setIsProcessing(false);
       }
     },
     [
-      isProcessing,
       addChatMessage,
       addTerminalLog,
       updateChatMessage,
@@ -468,6 +518,14 @@ export default function DashboardScreen() {
   const widgets = useMemo<WidgetSpec[]>(() => {
     const specs: WidgetSpec[] = [
       {
+        id: 'autonomy',
+        title: language === 'fr' ? 'CŒUR AUTONOME' : 'AUTONOMOUS CORE',
+        desc: language === 'fr' ? 'Agents parallèles, local, sécurité et synchronisation.' : 'Parallel agents, local core, security and sync.',
+        icon: <Brain size={15} color={palette.success} />,
+        borderColor: palette.success,
+        onPress: () => { haptics.light(); router.push('/autonomy'); },
+      },
+      {
         id: 'briefing',
         title: t('mod.briefing.title', language),
         desc: t('mod.briefing.desc', language),
@@ -477,6 +535,30 @@ export default function DashboardScreen() {
           haptics.light();
           setShowBriefingModal(true);
         },
+      },
+      {
+        id: 'intelligence',
+        title: language === 'fr' ? 'INTELLIGENCE LIVE' : 'LIVE INTELLIGENCE',
+        desc: language === 'fr' ? 'Météo 7 jours, actualités et recherche.' : '7-day weather, news and search feeds.',
+        icon: <Radio size={15} color={palette.warning} />,
+        borderColor: palette.warning,
+        onPress: () => router.push('/intelligence'),
+      },
+      {
+        id: 'operations',
+        title: language === 'fr' ? 'NEXUS OPÉRATIONS' : 'OPERATIONS NEXUS',
+        desc: language === 'fr' ? 'File persistante, agents et progression.' : 'Persistent queue, agents and progress.',
+        icon: <Zap size={15} color={palette.info} />,
+        borderColor: palette.info,
+        onPress: () => router.push('/operations'),
+      },
+      {
+        id: 'chat',
+        title: language === 'fr' ? 'COMMS GIDEON' : 'GIDEON COMMS',
+        desc: language === 'fr' ? 'Conversation texte, voix et vision.' : 'Text, voice and vision conversation.',
+        icon: <Waves size={15} color={palette.accent} />,
+        borderColor: palette.accent,
+        onPress: () => router.push('/chat'),
       },
       {
         id: 'dave',
@@ -674,11 +756,26 @@ export default function DashboardScreen() {
               status={status}
               amplitude={audioAmplitude}
               themeColor={palette.accent}
+              qualityOverride={adaptivePerformance.tier}
               mode="gideon"
               gyroEnabled={config.gyroEnabled ?? true}
               speechText={spokenText}
               speechRate={config.voiceRate}
             />
+            <View pointerEvents="box-none" style={styles.orbitalLayer}>
+              <TapScale style={[styles.orbitalNode, styles.orbitNW]} onPress={() => router.push('/intelligence')} accessibilityLabel="Live intelligence">
+                <Sun size={13} color={palette.warning} /><Text style={styles.orbitalText}>INTEL</Text>
+              </TapScale>
+              <TapScale style={[styles.orbitalNode, styles.orbitNE]} onPress={() => router.push('/operations')} accessibilityLabel="Operations nexus">
+                <Monitor size={13} color={palette.info} /><Text style={styles.orbitalText}>OPS</Text>
+              </TapScale>
+              <TapScale style={[styles.orbitalNode, styles.orbitSW]} onPress={() => router.push('/memory')} accessibilityLabel="Cognitive memory">
+                <Brain size={13} color={palette.accent} /><Text style={styles.orbitalText}>MEM</Text>
+              </TapScale>
+              <TapScale style={[styles.orbitalNode, styles.orbitSE]} onPress={() => router.push('/routines')} accessibilityLabel="Automation routines">
+                <Clock size={13} color={palette.success} /><Text style={styles.orbitalText}>AUTO</Text>
+              </TapScale>
+            </View>
 
             {/* Waveform: runs on real sound only, never during synthesis. */}
             <View style={styles.visualizerRow}>
@@ -700,6 +797,7 @@ export default function DashboardScreen() {
               <Text style={styles.statusReadoutText}>
                 {voiceMode === 'demo' && isRecording ? '[DEMO MIC] ' : ''}
                 {t(`dash.status.${status}`, language)}
+                {adaptivePerformance.fps ? ` · ${adaptivePerformance.tier.toUpperCase()} ${adaptivePerformance.fps}FPS` : ''}
               </Text>
             </View>
           </View>
@@ -746,6 +844,19 @@ export default function DashboardScreen() {
               <Text style={styles.voiceModeText}>{t('dash.voiceMode', language)}</Text>
             </TapScale>
           </View>
+        </ScreenReveal>
+
+        <ScreenReveal index={2}>
+          <HypercoreLiveMatrix
+            weather={liveWeather}
+            news={liveNews}
+            status={status}
+            isOffline={isOffline}
+            operationCount={terminalLogs.length}
+            language={language}
+            onOpenIntel={() => router.push('/intelligence')}
+            onOpenOperations={() => router.push('/operations')}
+          />
         </ScreenReveal>
 
         {/* Once per launch: a short, different, conversational hello. */}
@@ -945,6 +1056,13 @@ const dashboardStyles = (t: Palette) =>
       justifyContent: 'center',
       marginTop: 6,
     },
+    orbitalLayer: { position: 'absolute', top: 8, width: 330, height: 270 },
+    orbitalNode: { position: 'absolute', width: 46, height: 46, borderRadius: 23, borderWidth: 1, borderColor: t.borderStrong, backgroundColor: 'rgba(3,8,16,.94)', alignItems: 'center', justifyContent: 'center', gap: 2 },
+    orbitNW: { left: 0, top: 28 },
+    orbitNE: { right: 0, top: 28 },
+    orbitSW: { left: 4, bottom: 20 },
+    orbitSE: { right: 4, bottom: 20 },
+    orbitalText: { color: t.textDim, fontFamily: FONT.mono, fontSize: 6, fontWeight: '800', letterSpacing: .5 },
     visualizerRow: {
       marginTop: 4,
       alignItems: 'center',

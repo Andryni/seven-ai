@@ -1,4 +1,6 @@
 import { GoogleGenAI, type GenerateContentConfig } from '@google/genai';
+import { cloudJournalService } from '../services/cloudJournalService';
+import { useSevenStore } from '../store/useSevenStore';
 
 /**
  * Shared, resilient Gemini model resolution.
@@ -27,7 +29,18 @@ import { GoogleGenAI, type GenerateContentConfig } from '@google/genai';
 /** Newest first. Kept short: this is a safety net, not a version matrix. */
 const MODEL_CANDIDATES = ['gemini-3.6-flash', 'gemini-2.5-flash', 'gemini-2.0-flash', 'gemini-1.5-flash'] as const;
 
-let cachedWorkingModel: string | null = null;
+// Availability may differ between API keys/projects. A single global model id
+// could make a second account reuse a model it cannot access. Cache by a
+// one-way, process-local fingerprint instead of retaining the raw secret.
+const modelCache = new Map<string, string>();
+function keyFingerprint(key: string): string {
+  let hash = 2166136261;
+  for (let i = 0; i < key.length; i += 1) {
+    hash ^= key.charCodeAt(i);
+    hash = Math.imul(hash, 16777619);
+  }
+  return `${key.length}:${hash >>> 0}`;
+}
 
 /** True for "this model id does not exist / is not available", as opposed to
  * quota, network or content-safety errors that no model swap would fix. */
@@ -118,16 +131,38 @@ function buildConfig(params: LegacyModelParams): GenerateContentConfig {
   };
 }
 
+function recordGemini(action: string, model: string, status: 'sent' | 'completed' | 'failed'): void {
+  if (useSevenStore.getState().config.cloudJournalEnabled === false) return;
+  cloudJournalService.record({ provider: 'gemini', action, model, status, dataClass: 'text' }).catch(() => {});
+}
+
+function assertCloudTextAllowed(): void {
+  const config = useSevenStore.getState().config;
+  if (config.privacyProfile === 'local' || config.cloudTextEnabled === false) {
+    throw new Error('Cloud text processing is disabled by the active privacy profile.');
+  }
+}
+
 function makeResolvedModel(ai: GoogleGenAI, modelId: string, params: LegacyModelParams): ResolvedModel {
   const config = buildConfig(params);
   return {
     generateContent: async (request) => {
+      assertCloudTextAllowed();
       const contents = typeof request === 'string' ? request : request.contents;
-      const response = await ai.models.generateContent({ model: modelId, contents, config });
-      return wrapResponse(response);
+      recordGemini('generate content', modelId, 'sent');
+      try {
+        const response = await ai.models.generateContent({ model: modelId, contents, config });
+        recordGemini('generate content', modelId, 'completed');
+        return wrapResponse(response);
+      } catch (error) {
+        recordGemini('generate content', modelId, 'failed');
+        throw error;
+      }
     },
     generateContentStream: async (request) => {
+      assertCloudTextAllowed();
       const contents = typeof request === 'string' ? request : request.contents;
+      recordGemini('stream content', modelId, 'sent');
       const stream = await ai.models.generateContentStream({ model: modelId, contents, config });
       async function* iterate() {
         for await (const chunk of stream) {
@@ -152,7 +187,10 @@ export async function resolveModel(
   apiKey: string,
   params: LegacyModelParams
 ): Promise<{ model: ResolvedModel; modelId: string }> {
+  assertCloudTextAllowed();
   const ai = new GoogleGenAI({ apiKey });
+  const fingerprint = keyFingerprint(apiKey);
+  const cachedWorkingModel = modelCache.get(fingerprint);
 
   if (cachedWorkingModel) {
     return { model: makeResolvedModel(ai, cachedWorkingModel, params), modelId: cachedWorkingModel };
@@ -168,7 +206,7 @@ export async function resolveModel(
         contents: 'ping',
         config: { maxOutputTokens: 1 },
       });
-      cachedWorkingModel = candidate;
+      modelCache.set(fingerprint, candidate);
       return { model: makeResolvedModel(ai, candidate, params), modelId: candidate };
     } catch (e) {
       lastError = e;
@@ -186,8 +224,9 @@ export async function resolveModel(
  * session (avoids re-probing on every request). Falls back to the first
  * candidate if nothing has been resolved yet. */
 export function getModelSync(apiKey: string, params: LegacyModelParams): { model: ResolvedModel; modelId: string } {
+  assertCloudTextAllowed();
   const ai = new GoogleGenAI({ apiKey });
-  const modelId = cachedWorkingModel ?? MODEL_CANDIDATES[0];
+  const modelId = modelCache.get(keyFingerprint(apiKey)) ?? MODEL_CANDIDATES[0];
   return { model: makeResolvedModel(ai, modelId, params), modelId };
 }
 

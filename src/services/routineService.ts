@@ -1,4 +1,4 @@
-import * as Notifications from 'expo-notifications';
+import { getNotificationsModule, localNotificationsSupported, type NotificationsModule } from './notificationsAdapter';
 import { Platform } from 'react-native';
 import { useSevenStore } from '../store/useSevenStore';
 import type { AutomationRoutine, RoutineAction, RoutineTrigger } from '../types';
@@ -6,7 +6,10 @@ import { morningBriefingService } from './morningBriefingService';
 import { fileOrganizer } from './fileOrganizer';
 import { gmailService } from './gmailService';
 import { webSearchService } from './webSearchService';
-import type { NotificationResponse } from 'expo-notifications';
+import type {
+  NotificationResponse,
+  SchedulableNotificationTriggerInput,
+} from 'expo-notifications';
 
 /**
  * Local, no-server automation engine: "every morning at 8, run my briefing",
@@ -28,7 +31,10 @@ import type { NotificationResponse } from 'expo-notifications';
 
 export type RoutineScheduleResult = 'scheduled' | 'denied' | 'unsupported' | 'failed' | 'invalid';
 
-const isSupported = Platform.OS !== 'web';
+const isSupported = () => localNotificationsSupported();
+const Notifications = new Proxy({} as NotificationsModule, {
+  get: (_target, property) => getNotificationsModule()?.[property as keyof NotificationsModule],
+});
 const CHANNEL_ID = 'seven-routines';
 const NOTIFICATION_DATA_KIND = 'seven-routine';
 
@@ -130,11 +136,11 @@ function describeAction(action: RoutineAction, language: 'fr' | 'en'): { title: 
 
 class RoutineService {
   get supported(): boolean {
-    return isSupported;
+    return isSupported();
   }
 
   async ensurePermissionsAsync(): Promise<boolean> {
-    if (!isSupported) return false;
+    if (!isSupported()) return false;
     try {
       const settings = await Notifications.getPermissionsAsync();
       let granted =
@@ -174,7 +180,7 @@ class RoutineService {
    * `scheduleNotificationAsync` at all.
    */
   async scheduleRoutine(routine: AutomationRoutine, language: 'fr' | 'en' = 'en'): Promise<RoutineScheduleResult> {
-    if (!isSupported) return 'unsupported';
+    if (!isSupported()) return 'unsupported';
 
     const validationError = validateTrigger(routine.trigger);
     if (validationError) return 'invalid';
@@ -217,7 +223,9 @@ class RoutineService {
    *  are present integers for a time-based trigger type — the `!` below
    *  reflects that already-checked invariant rather than an unchecked
    *  assumption. */
-  private buildNotificationTrigger(trigger: RoutineTrigger): Notifications.SchedulableNotificationTriggerInput {
+  private buildNotificationTrigger(
+    trigger: RoutineTrigger
+  ): SchedulableNotificationTriggerInput {
     switch (trigger.type) {
       case 'weekly':
         return {
@@ -249,7 +257,7 @@ class RoutineService {
   }
 
   async cancelRoutine(routineId: string): Promise<void> {
-    if (!isSupported) return;
+    if (!isSupported()) return;
     try {
       await Notifications.cancelScheduledNotificationAsync(notificationIdFor(routineId));
     } catch {
@@ -273,7 +281,7 @@ class RoutineService {
    * `useConditionalRoutines` — so they are skipped.
    */
   async rescheduleAll(): Promise<void> {
-    if (!isSupported) return;
+    if (!isSupported()) return;
     const store = useSevenStore.getState();
     const language = (store.config.language || 'en') === 'fr' ? 'fr' : 'en';
     for (const routine of store.automationRoutines) {

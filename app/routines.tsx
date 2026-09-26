@@ -9,6 +9,8 @@ import {
   Modal,
   ScrollView,
   Switch,
+  Animated,
+  PanResponder,
 } from 'react-native';
 import { useRouter } from 'expo-router';
 import { useSevenStore } from '../src/store/useSevenStore';
@@ -40,6 +42,9 @@ import {
   BatteryWarning,
   CalendarCheck,
   Wifi,
+  BellRing,
+  GitBranch,
+  PlayCircle,
 } from 'lucide-react-native';
 
 const TRIGGER_TYPES: RoutineTriggerType[] = [
@@ -165,6 +170,7 @@ export default function RoutinesScreen() {
   const [saveError, setSaveError] = useState<string | null>(null);
   const [saving, setSaving] = useState(false);
   const [pendingDelete, setPendingDelete] = useState<AutomationRoutine | null>(null);
+  const [simulationTrace, setSimulationTrace] = useState<string[]>([]);
 
   const sorted = useMemo(
     () => [...routines].sort((a, b) => b.createdAt - a.createdAt),
@@ -283,6 +289,12 @@ export default function RoutinesScreen() {
         ListHeaderComponent={
           <ScreenReveal index={1}>
             <Text style={styles.subtitle}>{t('routines.subtitle', lang)}</Text>
+            {!!simulationTrace.length && (
+              <View style={styles.simulationPanel}>
+                <Text style={styles.simulationTitle}>ARES // DRY-RUN TRACE</Text>
+                {simulationTrace.map((line, index) => <Text key={`${line}-${index}`} style={styles.simulationLine}>{index + 1}. {line}</Text>)}
+              </View>
+            )}
           </ScreenReveal>
         }
         ListEmptyComponent={
@@ -325,12 +337,51 @@ export default function RoutinesScreen() {
                   thumbColor="#FFF"
                 />
               </View>
+              <View style={styles.graphRail}>
+                <View style={styles.graphNode}>
+                  {triggerIcon(item.trigger.type, palette.info, 12)}
+                  <Text style={styles.graphNodeText}>TRIGGER</Text>
+                </View>
+                <View style={styles.graphLink}><View style={styles.graphPulse} /></View>
+                <View style={styles.graphNode}>
+                  <GitBranch size={12} color={palette.warning} />
+                  <Text style={styles.graphNodeText}>VALIDATE</Text>
+                </View>
+                <View style={styles.graphLink}><View style={styles.graphPulse} /></View>
+                <View style={styles.graphNode}>
+                  {actionIcon(item.action.type, palette.success, 12)}
+                  <Text style={styles.graphNodeText}>EXECUTE</Text>
+                </View>
+                <View style={styles.graphLink}><View style={styles.graphPulse} /></View>
+                <View style={styles.graphNode}>
+                  <BellRing size={12} color={palette.accent} />
+                  <Text style={styles.graphNodeText}>REPORT</Text>
+                </View>
+              </View>
               <View style={styles.cardBottom}>
                 <Text style={styles.cardLastRun}>
                   {item.lastRunAt
                     ? `${t('routines.lastRun', lang)}: ${new Date(item.lastRunAt).toLocaleString()}`
                     : t('routines.never', lang)}
                 </Text>
+                <TouchableOpacity
+                  style={styles.simulateInline}
+                  accessibilityLabel="Simulate routine"
+                  onPress={() => {
+                    const trace = [
+                      `TRIGGER: ${summarize(item, lang)}`,
+                      `CONDITION: ${item.graph?.conditionExpression || 'always'} → TRUE`,
+                      `TRUE BRANCH: ${t(`routines.action.${item.action.type}`, lang)}`,
+                      `FALSE BRANCH: ${item.graph?.falseAction ? t(`routines.action.${item.graph.falseAction.type}`, lang) : 'NO-OP'}`,
+                      'REPORT: both paths validated; no action executed',
+                    ];
+                    setSimulationTrace(trace);
+                    addTerminalLog(`ROUTINE SIMULATION ${item.name}: ${trace.join(' | ')}`, 'info');
+                  }}
+                >
+                  <PlayCircle size={13} color={palette.info} />
+                  <Text style={styles.simulateInlineText}>SIMULATE</Text>
+                </TouchableOpacity>
                 <TouchableOpacity
                   accessibilityLabel={t('routines.delete', lang)}
                   onPress={() => {
@@ -375,6 +426,46 @@ export default function RoutinesScreen() {
                   placeholderTextColor={palette.textFaint}
                   maxLength={60}
                 />
+
+                <Text style={styles.fieldLabel}>VISUAL ROUTINE GRAPH</Text>
+                <RoutineGraphEditor
+                  routine={editing}
+                  palette={palette}
+                  onChange={(graph) => setEditing({ ...editing, graph })}
+                />
+                <Text style={styles.fieldLabel}>BRANCH CONDITION</Text>
+                <TextInput
+                  style={styles.nameInput}
+                  value={editing.graph?.conditionExpression || ''}
+                  onChangeText={(conditionExpression) => setEditing({
+                    ...editing,
+                    graph: { positions: editing.graph?.positions || {}, ...editing.graph, conditionExpression },
+                  })}
+                  placeholder={lang === 'fr' ? 'ex. batterie < 20, sinon toujours' : 'e.g. battery < 20, otherwise always'}
+                  placeholderTextColor={palette.textFaint}
+                />
+
+                <Text style={styles.fieldLabel}>FALSE BRANCH</Text>
+                <ScrollView horizontal showsHorizontalScrollIndicator={false} contentContainerStyle={styles.chipRow}>
+                  <TouchableOpacity
+                    style={[styles.chip, !editing.graph?.falseAction && styles.chipActive]}
+                    onPress={() => setEditing({ ...editing, graph: { positions: editing.graph?.positions || {}, conditionExpression: editing.graph?.conditionExpression } })}
+                  >
+                    <Text style={[styles.chipText, !editing.graph?.falseAction && styles.chipTextActive]}>NO-OP</Text>
+                  </TouchableOpacity>
+                  {ACTION_TYPES.map((actionType) => (
+                    <TouchableOpacity
+                      key={`false-${actionType}`}
+                      style={[styles.chip, editing.graph?.falseAction?.type === actionType && styles.chipActive]}
+                      onPress={() => setEditing({
+                        ...editing,
+                        graph: { positions: editing.graph?.positions || {}, ...editing.graph, falseAction: { type: actionType } },
+                      })}
+                    >
+                      <Text style={[styles.chipText, editing.graph?.falseAction?.type === actionType && styles.chipTextActive]}>{t(`routines.action.${actionType}`, lang)}</Text>
+                    </TouchableOpacity>
+                  ))}
+                </ScrollView>
 
                 <Text style={styles.fieldLabel}>{t('routines.trigger', lang)}</Text>
                 <View style={styles.chipRow}>
@@ -611,6 +702,54 @@ export default function RoutinesScreen() {
   );
 }
 
+function DraggableRoutineNode({ id, label, initial, color, onMove }: { id: string; label: string; initial: { x: number; y: number }; color: string; onMove: (id: string, position: { x: number; y: number }) => void }) {
+  const position = useMemo(() => new Animated.ValueXY({ x: 0, y: 0 }), []);
+  const pan = useMemo(() => PanResponder.create({
+    onStartShouldSetPanResponder: () => true,
+    onMoveShouldSetPanResponder: () => true,
+    onPanResponderMove: Animated.event([null, { dx: position.x, dy: position.y }], { useNativeDriver: false }),
+    onPanResponderRelease: (_, gesture) => {
+      position.setValue({ x: 0, y: 0 });
+      onMove(id, {
+        x: Math.max(0, Math.min(235, initial.x + gesture.dx)),
+        y: Math.max(0, Math.min(125, initial.y + gesture.dy)),
+      });
+    },
+  }), [id, initial.x, initial.y, onMove, position]);
+  return <Animated.View {...pan.panHandlers} style={[{ position: 'absolute', left: initial.x, top: initial.y, transform: position.getTranslateTransform(), borderColor: color }, graphNodeStyles.node]}><Text style={[graphNodeStyles.text, { color }]}>{label}</Text></Animated.View>;
+}
+
+function RoutineGraphEditor({ routine, palette, onChange }: { routine: AutomationRoutine; palette: Palette; onChange: (graph: NonNullable<AutomationRoutine['graph']>) => void }) {
+  const defaults: Record<string, { x: number; y: number }> = {
+    trigger: { x: 5, y: 55 }, condition: { x: 90, y: 55 }, true: { x: 180, y: 15 }, false: { x: 180, y: 95 }, report: { x: 265, y: 55 },
+  };
+  const positions = { ...defaults, ...(routine.graph?.positions || {}) };
+  const move = (id: string, position: { x: number; y: number }) => onChange({
+    positions: { ...positions, [id]: position },
+    conditionExpression: routine.graph?.conditionExpression,
+    falseAction: routine.graph?.falseAction,
+  });
+  return <View style={graphNodeStyles.canvas}>
+    <View style={[graphNodeStyles.branchLine, { borderColor: palette.borderStrong }]} />
+    <Text style={[graphNodeStyles.trueLabel, { color: palette.success }]}>TRUE</Text>
+    <Text style={[graphNodeStyles.falseLabel, { color: palette.error }]}>FALSE</Text>
+    <DraggableRoutineNode id="trigger" label="TRIGGER" initial={positions.trigger} color={palette.info} onMove={move} />
+    <DraggableRoutineNode id="condition" label="IF / ELSE" initial={positions.condition} color={palette.warning} onMove={move} />
+    <DraggableRoutineNode id="true" label="ACTION" initial={positions.true} color={palette.success} onMove={move} />
+    <DraggableRoutineNode id="false" label="FALLBACK" initial={positions.false} color={palette.error} onMove={move} />
+    <DraggableRoutineNode id="report" label="REPORT" initial={positions.report} color={palette.accent} onMove={move} />
+  </View>;
+}
+
+const graphNodeStyles = {
+  canvas: { height: 175, borderWidth: 1, borderColor: 'rgba(0,229,255,.22)', borderRadius: 8, backgroundColor: 'rgba(0,0,0,.3)', overflow: 'hidden' as const, marginBottom: 6 },
+  node: { width: 72, height: 36, borderWidth: 1, borderRadius: 5, backgroundColor: 'rgba(4,12,20,.96)', alignItems: 'center' as const, justifyContent: 'center' as const },
+  text: { fontFamily: FONT.monoBold, fontSize: 7 },
+  branchLine: { position: 'absolute' as const, left: 50, right: 30, top: 73, height: 1, borderTopWidth: 1 },
+  trueLabel: { position: 'absolute' as const, left: 155, top: 32, fontFamily: FONT.mono, fontSize: 6 },
+  falseLabel: { position: 'absolute' as const, left: 155, top: 117, fontFamily: FONT.mono, fontSize: 6 },
+};
+
 const routinesStyles = (t: Palette) =>
   ({
     topNav: {
@@ -638,6 +777,9 @@ const routinesStyles = (t: Palette) =>
     scrollArea: { flex: 1 },
     scrollContent: { paddingHorizontal: 12, paddingTop: 12, paddingBottom: 40 },
     subtitle: { fontFamily: FONT.mono, color: t.textDim, fontSize: 10, lineHeight: 14, marginBottom: 12 },
+    simulationPanel: { borderWidth: 1, borderColor: t.info, borderRadius: 7, backgroundColor: t.accentSoft, padding: 9, marginBottom: 10 },
+    simulationTitle: { color: t.info, fontFamily: FONT.monoBold, fontSize: 8, marginBottom: 5 },
+    simulationLine: { color: t.textDim, fontFamily: FONT.mono, fontSize: 8, lineHeight: 14 },
     emptyCard: {
       backgroundColor: t.bgElevated,
       borderRadius: 8,
@@ -671,6 +813,13 @@ const routinesStyles = (t: Palette) =>
     cardMetaRow: { flexDirection: 'row', alignItems: 'center', gap: 4, marginTop: 2 },
     cardMeta: { fontFamily: FONT.mono, color: t.textDim, fontSize: 9.5 },
     cardAction: { fontFamily: FONT.mono, color: t.accent, fontSize: 9, marginTop: 2 },
+    graphRail: { flexDirection: 'row', alignItems: 'center', marginTop: 12, padding: 8, borderRadius: 6, borderWidth: 1, borderColor: t.border, backgroundColor: t.bgDeep },
+    graphNode: { width: 47, alignItems: 'center', gap: 3 },
+    graphNodeText: { fontFamily: FONT.mono, color: t.textFaint, fontSize: 5.8, fontWeight: '800', letterSpacing: 0.4 },
+    graphLink: { flex: 1, height: 1, backgroundColor: t.borderStrong, justifyContent: 'center' },
+    graphPulse: { width: 5, height: 5, borderRadius: 3, alignSelf: 'center', backgroundColor: t.accent },
+    simulateInline: { flexDirection: 'row', alignItems: 'center', gap: 4, borderWidth: 1, borderColor: t.info, borderRadius: 4, paddingHorizontal: 7, paddingVertical: 4 },
+    simulateInlineText: { color: t.info, fontFamily: FONT.monoBold, fontSize: 6.5 },
     cardBottom: {
       flexDirection: 'row',
       justifyContent: 'space-between',

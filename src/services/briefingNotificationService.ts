@@ -1,5 +1,5 @@
-import * as Notifications from 'expo-notifications';
 import { Platform } from 'react-native';
+import { getNotificationsModule, localNotificationsSupported } from './notificationsAdapter';
 
 /**
  * Why this file is defensive: expo-notifications only implements local
@@ -10,7 +10,7 @@ import { Platform } from 'react-native';
  */
 export type BriefingResult = 'scheduled' | 'denied' | 'unsupported' | 'failed';
 
-const isSupported = Platform.OS !== 'web';
+const isSupported = () => localNotificationsSupported();
 
 /**
  * Daily morning briefing via local notifications (no server needed).
@@ -18,12 +18,13 @@ const isSupported = Platform.OS !== 'web';
  */
 class BriefingNotificationService {
   get supported(): boolean {
-    return isSupported;
+    return isSupported();
   }
 
   /** Idempotent: configures the Android channel and asks for permission. */
   async ensurePermissionsAsync(): Promise<boolean> {
-    if (!isSupported) return false;
+    if (!isSupported()) return false;
+    const Notifications = getNotificationsModule()!;
     try {
       const settings = await Notifications.getPermissionsAsync();
       let granted =
@@ -51,7 +52,8 @@ class BriefingNotificationService {
 
   /** Schedules (or re-schedules) the daily 08:00 briefing. */
   async scheduleDailyBriefing(): Promise<BriefingResult> {
-    if (!isSupported) return 'unsupported';
+    if (!isSupported()) return 'unsupported';
+    const Notifications = getNotificationsModule()!;
     try {
       const ok = await this.ensurePermissionsAsync();
       if (!ok) return 'denied';
@@ -77,7 +79,8 @@ class BriefingNotificationService {
   }
 
   async cancelDailyBriefing(): Promise<void> {
-    if (!isSupported) return;
+    if (!isSupported()) return;
+    const Notifications = getNotificationsModule()!;
     try {
       await Notifications.cancelScheduledNotificationAsync('morning-briefing');
     } catch {
