@@ -239,7 +239,36 @@ function adbShell(adb, serial, args, options) {
 function readFontScale(adb, serial) {
   const result = adbShell(adb, serial, ['settings', 'get', 'system', 'font_scale'], { allowFailure: true });
   const value = Number.parseFloat(result.stdout.trim());
-  return Number.isFinite(value) && value > 0 ? value : 1;
+  return Number.isFinite(value) && value > 0 ? value : null;
+}
+
+/**
+ * Writing `font_scale` needs WRITE_SETTINGS, which vendor ROMs do not always
+ * grant the adb shell user — on a Realme/ColorOS device this answers
+ * "com.android.shell was not granted this permission: WRITE_SETTINGS". Worse,
+ * the failure is silent: the `put` exits 0, the setting never moves, and both
+ * dumps would then be taken at the *same* scale and honestly report a ratio of
+ * 1.0 — a number that looks like evidence. So probe with the value that is
+ * already there (the device is left untouched) before measuring anything.
+ */
+function assertFontScaleWritable(adb, serial, current) {
+  // Writes the value that is already there, so the device is left untouched —
+  // but the *exit status* is what counts. Comparing the value back cannot tell
+  // "the write was refused" from "the write did nothing", which is exactly how
+  // this guard first fooled itself on a realme device: the refused `put` leaves
+  // font_scale at 0.9, the probe writes 0.9, and every check passes.
+  const probe = adbShell(adb, serial, ['settings', 'put', 'system', 'font_scale', String(current)], {
+    allowFailure: true,
+  });
+  if (probe.status !== 0 || /SecurityException|Permission denial|not granted/i.test(probe.output)) {
+    const reason = probe.output.trim().split('\n')[0].replace(/\r/g, '');
+    throw new Error(
+      `this device refuses font_scale changes from adb (com.android.shell lacks WRITE_SETTINGS): ${reason}. ` +
+        'Enable "USB debugging (Security settings)" in Developer options and ' +
+        'retry, or change Settings > Display > Font size by hand between two runs and compare the ' +
+        'saved dumps yourself'
+    );
+  }
 }
 
 function restartApp(adb, serial) {
@@ -256,25 +285,51 @@ function dumpUi(adb, serial) {
 }
 
 /**
+ * How long to keep asking for a UI dump before giving up on a screen.
+ *
+ * Default is generous on purpose: a SEVEN dashboard keeps a looping animation
+ * alive, so the window never reaches the idle state uiautomator waits for, and
+ * dumps land only in the gaps. Measured on a realme RMX2063 running SEVEN 3.3.0,
+ * three consecutive dumps failed and a later one succeeded without the screen
+ * changing — so the answer is retry, not fail.
+ */
+const DASHBOARD_TIMEOUT_MS = 180_000;
+
+/**
  * uiautomator refuses to dump while the screen animates, so this retries rather
  * than failing the whole run on one unlucky timing.
  */
-function waitForDashboard(adb, serial, timeoutMs = 90_000) {
+function waitForDashboard(adb, serial, timeoutMs = DASHBOARD_TIMEOUT_MS) {
   const deadline = Date.now() + timeoutMs;
   let last = '';
+  let attempts = 0;
   while (Date.now() < deadline) {
     last = dumpUi(adb, serial);
+    attempts += 1;
     if (LOCK_SCREEN_MARKERS.test(last)) {
       throw new Error('the app is showing its lock screen — disable APP LOCK (or unlock it) and re-run');
     }
     if (DASHBOARD_MARKERS.test(last)) return last;
+    // Stay quiet for the first few tries (they usually fail fast) but never let a
+    // minutes-long wait look like a hang.
+    if (attempts % 5 === 0) {
+      console.log(`    … ${attempts} dumps so far, still no stable UI (last one ${last.length} bytes)`);
+    }
     sleep(2500);
   }
-  throw new Error(`dashboard never showed up within ${timeoutMs}ms (last dump was ${last.length} bytes)`);
+  throw new Error(
+    `dashboard never showed up within ${timeoutMs}ms after ${attempts} dumps. ` +
+      'If uiautomator keeps answering "could not get idle state", something on screen animates ' +
+      'non-stop (SEVEN keeps a live readout running) — try again with the phone left untouched.'
+  );
 }
 
 function measureFontScales(options, adb, serial) {
   const original = readFontScale(adb, serial);
+  if (original === null) {
+    throw new Error('could not read the current font_scale from the device — refusing to measure');
+  }
+  assertFontScaleWritable(adb, serial, original);
   const dumps = {};
   try {
     for (const [label, scale] of [
@@ -283,6 +338,15 @@ function measureFontScales(options, adb, serial) {
     ]) {
       console.log(`  font_scale ${scale}…`);
       adbShell(adb, serial, ['settings', 'put', 'system', 'font_scale', String(scale)]);
+      // A `put` that did not take effect would make both dumps identical and the
+      // ratio a meaningless 1.0, so confirm the device actually moved.
+      const applied = readFontScale(adb, serial);
+      if (applied === null || Math.abs(applied - scale) > 1e-6) {
+        throw new Error(
+          `font_scale ${scale} did not take effect (device reports ${applied}) — ` +
+            'measurement aborted rather than comparing two identical renders'
+        );
+      }
       restartApp(adb, serial);
       const xml = waitForDashboard(adb, serial);
       dumps[label] = xml;
