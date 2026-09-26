@@ -36,7 +36,10 @@ export const ScreenReveal: React.FC<Props> = ({
       duration: 420,
       delay: delay + index * 90,
       easing: Easing.out(Easing.cubic),
-      useNativeDriver: false,
+      // Opacity and translateY are native-driver compatible. Keeping these
+      // entrance animations off the JS thread prevents them from delaying
+      // navigation presses while the dashboard mounts its heavier surfaces.
+      useNativeDriver: true,
     }).start();
   }, [progress, delay, index]);
 

@@ -1,4 +1,5 @@
 import { webSearchService } from '../src/services/webSearchService';
+import { useSevenStore } from '../src/store/useSevenStore';
 
 /**
  * DuckDuckGo's Instant Answer API is not a general search engine and often
@@ -9,6 +10,9 @@ describe('webSearchService', () => {
   const originalFetch = global.fetch;
   afterEach(() => {
     global.fetch = originalFetch;
+    useSevenStore.setState((state) => ({
+      config: { ...state.config, braveSearchApiKey: '' },
+    }));
   });
 
   it('merges a DuckDuckGo abstract with Wikipedia summaries', async () => {
@@ -78,11 +82,33 @@ describe('webSearchService', () => {
     expect(res.results[0].title).toBe('React (software)');
   });
 
-  it('returns a graceful placeholder when both sources are unreachable', async () => {
+  it('uses Brave Search when an optional key is configured', async () => {
+    useSevenStore.setState((state) => ({
+      config: { ...state.config, braveSearchApiKey: 'brave-test-key' },
+    }));
+    global.fetch = jest.fn(async (url: string) => {
+      if (url.includes('api.search.brave.com')) {
+        return {
+          ok: true,
+          json: async () => ({ web: { results: [{ title: 'Current source', description: 'Fresh result', url: 'https://example.com/current' }] } }),
+        } as any;
+      }
+      throw new Error('free fallback offline');
+    }) as any;
+
+    const res = await webSearchService.searchWeb('current topic');
+    expect(res.results).toContainEqual({
+      title: 'Current source',
+      snippet: 'Fresh result',
+      url: 'https://example.com/current',
+    });
+  });
+
+  it('returns an honest empty result when all sources are unreachable', async () => {
     global.fetch = jest.fn().mockRejectedValue(new Error('offline')) as any;
 
     const res = await webSearchService.searchWeb('anything');
-    expect(res.results).toHaveLength(1);
-    expect(res.results[0].url).toContain('duckduckgo.com');
+    expect(res.results).toHaveLength(0);
+    expect(res.summary).toContain('No verifiable source');
   });
 });

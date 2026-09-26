@@ -1,6 +1,6 @@
 import React, { useEffect, useMemo, useState } from 'react';
 import { Animated, Easing, View, Text } from 'react-native';
-import { useRouter } from 'expo-router';
+import { usePathname, useRouter } from 'expo-router';
 import {
   LayoutGrid,
   MessageSquare,
@@ -51,15 +51,19 @@ interface Props {
  */
 export const BottomNav: React.FC<Props> = ({ active, translucent = false }) => {
   const router = useRouter();
+  const pathname = usePathname();
   const config = useSevenStore((s) => s.config);
   const palette = useTheme();
   const styles = useThemeStyles(navStyles);
   const insets = useSafeAreaInsets();
 
-  const activeIndex = Math.max(
-    0,
-    NAV_TABS.findIndex((tab) => tab.key === active)
-  );
+  // Route truth wins over the legacy `active` hint. Several secondary screens
+  // historically passed `dashboard`, which disabled the Dashboard button even
+  // though the user was on /memory, /routines or /operations.
+  const normalizedPath = pathname !== '/' ? pathname.replace(/\/+$/, '') : pathname;
+  const routeIndex = NAV_TABS.findIndex((tab) => tab.route === normalizedPath);
+  const hintedIndex = NAV_TABS.findIndex((tab) => tab.key === active);
+  const activeIndex = routeIndex >= 0 ? routeIndex : hintedIndex >= 0 && active !== 'dashboard' ? hintedIndex : -1;
   const [barWidth, setBarWidth] = useState(0);
 
   // Fractional index → one spring to the right slot. Fractional so the bar
@@ -68,7 +72,7 @@ export const BottomNav: React.FC<Props> = ({ active, translucent = false }) => {
 
   useEffect(() => {
     Animated.spring(slide, {
-      toValue: activeIndex,
+      toValue: Math.max(0, activeIndex),
       friction: 9,
       tension: 70,
       useNativeDriver: false,
@@ -95,7 +99,7 @@ export const BottomNav: React.FC<Props> = ({ active, translucent = false }) => {
         },
       ]}
     >
-      {barWidth > 0 && (
+      {barWidth > 0 && activeIndex >= 0 && (
         <Animated.View
           pointerEvents="none"
           style={[
@@ -107,7 +111,7 @@ export const BottomNav: React.FC<Props> = ({ active, translucent = false }) => {
 
       <View style={styles.row} onLayout={(e) => setBarWidth(e.nativeEvent.layout.width)}>
         {NAV_TABS.map((tab) => {
-          const isActive = tab.key === active;
+          const isActive = tab.route === normalizedPath;
           const color = isActive ? palette.accent : palette.textFaint;
           return (
             <TapScale
@@ -118,7 +122,11 @@ export const BottomNav: React.FC<Props> = ({ active, translucent = false }) => {
               onPress={() => {
                 if (isActive) return;
                 haptics.light();
-                router.push(tab.route as never);
+                // `navigate` reuses an existing destination in the router
+                // stack and is resilient to rapid taps during a transition.
+                // `replace` occasionally left Expo Router's native stack in a
+                // transition lock on Android/Expo Go.
+                router.navigate(tab.route as never);
               }}
             >
               <Animated.View style={{ transform: [{ scale: isActive ? 1.06 : 1 }] }}>
@@ -141,6 +149,10 @@ const navStyles = (t: Palette) =>
       borderTopWidth: 1,
       borderTopColor: t.border,
       paddingTop: 6,
+      // Keep the navigation rail above animated/absolute dashboard modules on
+      // Android as well as iOS. `zIndex` alone is not sufficient on Android.
+      zIndex: 200,
+      elevation: 18,
     },
     indicator: {
       position: 'absolute',

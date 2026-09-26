@@ -66,33 +66,33 @@ const lightBase = {
 const sevenPalette: Record<UiMode, Palette> = {
   dark: {
     ...darkBase,
-    bg: '#07090E',
-    bgElevated: '#0F141F',
-    bgDeep: '#030508',
-    border: 'rgba(0,229,255,0.22)',
-    borderStrong: 'rgba(0,229,255,0.45)',
-    accent: '#00E5FF',
-    accentSoft: 'rgba(0,229,255,0.1)',
-    accentStrong: 'rgba(0,229,255,0.45)',
-    orbInner: '#00E5FF',
-    orbOuter: '#0070F3',
+    // SEVEN's default identity is an aerospace instrument, not the familiar
+    // cyan-on-navy "AI dashboard" template: warm optical amber is paired with
+    // ink-black titanium and a restrained navigation blue.
+    bg: '#0A0A09',
+    bgElevated: '#15140F',
+    bgDeep: '#040403',
+    border: 'rgba(255,181,71,0.20)',
+    borderStrong: 'rgba(255,181,71,0.48)',
+    accent: '#FFB547',
+    accentSoft: 'rgba(255,181,71,0.09)',
+    accentStrong: 'rgba(255,181,71,0.44)',
+    orbInner: '#FFB547',
+    orbOuter: '#5267C7',
   },
   light: {
     ...lightBase,
-    bg: '#EBF4F8',
-    bgElevated: '#FFFFFF',
-    bgDeep: '#DCE8EE',
-    border: 'rgba(0,140,180,0.3)',
-    borderStrong: 'rgba(0,140,180,0.5)',      // WCAG AA fix: original '#0070F3' measured 4.08:1 against `bg`
-      // ('#EBF4F8'), below the 4.5:1 body-text threshold used anywhere this
-      // color paints text/icons directly on the page background. Darkened
-      // along the same hue; the final value clears 4.5:1 on all three light
-      // backgrounds (bg, bgElevated, bgDeep — see themeContrast.test.ts).
-      accent: '#0061D3',
-    accentSoft: 'rgba(0,112,243,0.1)',
-    accentStrong: 'rgba(0,112,243,0.4)',
-    orbInner: '#0070F3',
-    orbOuter: '#00E5FF',
+    // Warm technical paper rather than a generic blue-white SaaS surface.
+    bg: '#F3EFE5',
+    bgElevated: '#FFFCF3',
+    bgDeep: '#EEE7D9',
+    border: 'rgba(122,70,8,0.26)',
+    borderStrong: 'rgba(122,70,8,0.50)',
+    accent: '#854900',
+    accentSoft: 'rgba(133,73,0,0.09)',
+    accentStrong: 'rgba(133,73,0,0.38)',
+    orbInner: '#A75D00',
+    orbOuter: '#4054A5',
   },
 };
 

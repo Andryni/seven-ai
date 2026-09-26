@@ -45,8 +45,9 @@ export type WidgetLayout = Record<string, { x: number; y: number; size?: WidgetS
 const TILE_HEIGHT = 76;
 const GAP = 8;
 const COLUMNS = 3;
-/** Three rows of room for two rows of modules — the slack is the point. */
-const ROWS = 3;
+/** Four rows fit the Generation 4 module set without stacking several
+ * absolute-positioned tiles onto the same final row. */
+const ROWS = 4;
 
 export const CANVAS_HEIGHT = TILE_HEIGHT * ROWS + GAP * (ROWS - 1);
 
@@ -54,9 +55,9 @@ const clamp = (value: number, min: number, max: number) =>
   value < min ? min : value > max ? max : value;
 
 /**
- * Default deck: the modules sit in a 3 × 2 grid. Because the canvas is three
- * rows tall, the fractions land the tiles exactly on the grid while leaving the
- * bottom row free to drag into.
+ * Default deck: modules fill the three-column grid row by row. The canvas has
+ * enough rows for the complete Generation 4 roster, so no two default tiles
+ * are clamped onto the same absolute position.
  */
 export const defaultWidgetLayout = (ids: string[]): WidgetLayout => {
   const travelY = Math.max(1, CANVAS_HEIGHT - TILE_HEIGHT);
@@ -189,8 +190,15 @@ export const CanvasWidget: React.FC<CanvasWidgetProps> = ({
   const responder = useMemo(
     () =>
       PanResponder.create({
-        onStartShouldSetPanResponder: () => editing,
-        onMoveShouldSetPanResponder: () => editing,
+        // A tile must not steal the initial touch from the dashboard's
+        // ScrollView. Claim only a deliberate drag; taps still reach the
+        // hide/resize controls and vertical swipes outside a moving tile keep
+        // the page navigable while ARRANGE mode is active.
+        onStartShouldSetPanResponder: () => false,
+        onMoveShouldSetPanResponder: (_event, gesture) =>
+          editing && Math.hypot(gesture.dx, gesture.dy) > 7,
+        onMoveShouldSetPanResponderCapture: (_event, gesture) =>
+          editing && Math.hypot(gesture.dx, gesture.dy) > 7,
         onPanResponderGrant: () => {
           setDragging(true);
           haptics.light();

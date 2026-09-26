@@ -1,6 +1,7 @@
 import { Part } from '@google/genai';
 import { resolveModel } from './geminiClient';
 import { openRouterService } from '../services/openRouterService';
+import { localInferenceService } from '../services/localInferenceService';
 import { useSevenStore } from '../store/useSevenStore';
 import { ChatMessage } from '../types';
 import { fileOrganizer } from '../services/fileOrganizer';
@@ -130,7 +131,13 @@ export class SevenAgent {
     }
     const localStartedAt = Date.now();
     try {
-      res = await this.chatLocalFallback(userPrompt, quota ? 'quota' : 'offline');
+      if (store.config.localInferenceEnabled && store.config.localModelEndpoint) {
+        const local = await localInferenceService.complete(userPrompt, store.chatHistory.slice(-12).map((item) => `${item.sender}: ${item.text}`).join('\n'));
+        res = { text: local.text };
+        store.addTerminalLog(`LOCAL MODEL: ${local.model} answered in ${local.latencyMs} ms.`, 'success');
+      } else {
+        res = await this.chatLocalFallback(userPrompt, quota ? 'quota' : 'offline');
+      }
     } catch {
       res = {
         text: fr
@@ -516,7 +523,13 @@ ${notes}`;
     const config = store.config;
 
     store.setStatus('thinking');
-    store.addTerminalLog(`USER PROMPT: "${userPrompt || (image ? '[Image Analysis]' : '')}"`, 'cmd');
+    const attachmentKind = image?.mimeType === 'application/pdf' ? 'document' : 'image';
+    // Terminal logs are persisted and exportable: never duplicate prompts,
+    // document contents, contact details or voice transcripts into them.
+    store.addTerminalLog(
+      image ? `USER REQUEST RECEIVED [${attachmentKind.toUpperCase()} ATTACHED]` : 'USER REQUEST RECEIVED',
+      'cmd'
+    );
 
     // --- Brain telemetry (see brainTelemetry.ts) ---
     // Recorded as soon as the turn's first remote output lands — the HUD should
@@ -553,7 +566,7 @@ ${notes}`;
       if (!config.geminiApiKey || config.geminiApiKey.trim().length <= 5) {
         if (image) {
           const res = {
-            text: 'Vision / Image analysis requires a Gemini API key. Configure your API key in Settings.',
+            text: 'Image and PDF analysis requires a Gemini API key. Configure your API key in Settings.',
             toolCall: {
               name: 'vision' as const,
               status: 'failed' as const,
@@ -601,7 +614,10 @@ ${notes}`;
             parts: [{ text: userPrompt || 'Analyze and describe what is visible in this image in detail.' }, imagePart],
           });
         }
-        store.addTerminalLog('OCULAR SUBSYSTEM: Multimodal image attached to Gemini payload', 'info');
+        store.addTerminalLog(
+          `${attachmentKind === 'document' ? 'DOCUMENT' : 'OCULAR'} SUBSYSTEM: multimodal attachment added to Gemini payload`,
+          'info'
+        );
       }
 
       // ---- Pass 1: real token-level streaming, with a fallback to a
@@ -664,7 +680,13 @@ ${notes}`;
         store.addTerminalLog('Gemini response received [200 OK]', 'success');
         return {
           text: fullText,
-          toolCall: image ? { name: 'vision', status: 'completed', summary: 'Ocular analysis completed' } : undefined,
+          toolCall: image
+            ? {
+                name: 'vision',
+                status: 'completed',
+                summary: attachmentKind === 'document' ? 'Document analysis completed' : 'Image analysis completed',
+              }
+            : undefined,
         };
       }
 
@@ -1021,6 +1043,16 @@ ${notes}`;
           summary: 'Read clipboard',
         },
       };
+    }
+
+    if (config.localInferenceEnabled && config.localModelEndpoint) {
+      try {
+        const local = await localInferenceService.complete(userPrompt, store.chatHistory.slice(-12).map((item) => `${item.sender}: ${item.text}`).join('\n'));
+        store.addTerminalLog(`LOCAL MODEL: ${local.model} answered in ${local.latencyMs} ms.`, 'success');
+        return { text: local.text };
+      } catch (error: any) {
+        store.addTerminalLog(`LOCAL MODEL unavailable: ${error?.message || error}`, 'warn');
+      }
     }
 
     // Plain conversational fallback (no key configured, or Gemini unreachable).

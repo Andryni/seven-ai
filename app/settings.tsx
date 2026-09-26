@@ -19,6 +19,10 @@ import { ParticleBackground } from '../src/components/ParticleBackground';
 import { HudHeader } from '../src/components/HudHeader';
 import { ConnectorCard } from '../src/components/ConnectorCard';
 import { SelfHealingModal } from '../src/components/SelfHealingModal';
+import { CapabilityHero } from '../src/components/CapabilityHero';
+import { ProviderHealthPanel } from '../src/components/ProviderHealthPanel';
+import { StorageGuardrails } from '../src/components/StorageGuardrails';
+import { OrbView } from '../src/components/OrbView';
 import { gmailService } from '../src/services/gmailService';
 import { instagramService } from '../src/services/instagramService';
 import { briefingNotifications } from '../src/services/briefingNotificationService';
@@ -32,6 +36,10 @@ import type { Palette, ThemeName, UiMode } from '../src/theme/theme';
 import { t } from '../src/theme/i18n';
 import { haptics } from '../src/services/hapticsService';
 import { appLockService } from '../src/services/appLockService';
+import { cloudJournalService } from '../src/services/cloudJournalService';
+import type { CloudJournalEntry } from '../src/services/cloudJournalService';
+import { memoryService } from '../src/services/memoryService';
+import { secretConfigService } from '../src/services/secretConfigService';
 import {
   Settings,
   ChevronLeft,
@@ -47,6 +55,7 @@ import {
   Brain,
   Bell,
   Monitor,
+  Trash2,
 } from 'lucide-react-native';
 
 const VOICE_LANGUAGES = [
@@ -84,7 +93,13 @@ export default function SettingsScreen() {
   const googleState = useSevenStore((s) => s.googleState);
   const instagramState = useSevenStore((s) => s.instagramState);
   const patchLogs = useSevenStore((s) => s.patchLogs);
+  const messageCount = useSevenStore((s) => s.chatHistory.length);
+  const sessionCount = useSevenStore((s) => s.chatSessions.length);
+  const routineCount = useSevenStore((s) => s.automationRoutines.length);
   const addTerminalLog = useSevenStore((s) => s.addTerminalLog);
+  const clearTerminalLogs = useSevenStore((s) => s.clearTerminalLogs);
+  const clearChatSessions = useSevenStore((s) => s.clearChatSessions);
+  const resetConversation = useSevenStore((s) => s.resetConversation);
 
   const palette = useTheme();
   const styles = useThemeStyles(settingsStyles);
@@ -96,6 +111,7 @@ export default function SettingsScreen() {
   const [userName, setUserName] = useDraft(config.userName || 'Commander');
   const [geminiApiKey, setGeminiApiKey] = useDraft(config.geminiApiKey || '');
   const [openRouterKey, setOpenRouterKey] = useDraft(config.openRouterKey || '');
+  const [braveSearchApiKey, setBraveSearchApiKey] = useDraft(config.braveSearchApiKey || '');
   const [googleClientId, setGoogleClientId] = useDraft(config.googleClientId || '');
   const [voiceEnabled, setVoiceEnabled] = useDraft(config.voiceEnabled);
   const [voicePitch, setVoicePitch] = useDraft(config.voicePitch || 1.0);
@@ -127,6 +143,12 @@ export default function SettingsScreen() {
   const [showSelfHealingModal, setShowSelfHealingModal] = useState(false);
   const [savedSuccess, setSavedSuccess] = useState(false);
   const [isTestingVoice, setIsTestingVoice] = useState(false);
+  const [cloudJournal, setCloudJournal] = useState<CloudJournalEntry[]>([]);
+
+  useEffect(() => {
+    cloudJournalService.initialize().catch(() => {});
+    return cloudJournalService.subscribe(setCloudJournal);
+  }, []);
 
   // App lock: the switch only ever turns on if the device actually has
   // biometrics/passcode enrolled, checked live (never trusted from a stale
@@ -245,6 +267,7 @@ export default function SettingsScreen() {
       userName: userName.trim() || 'Commander',
       geminiApiKey: geminiApiKey.trim() || config.geminiApiKey || '',
       openRouterKey: openRouterKey.trim() || config.openRouterKey || '',
+      braveSearchApiKey: braveSearchApiKey.trim() || config.braveSearchApiKey || '',
       googleClientId: googleClientId.trim() || config.googleClientId || '',
       voiceEnabled,
       voicePitch,
@@ -263,6 +286,42 @@ export default function SettingsScreen() {
     haptics.success();
     setTimeout(() => setSavedSuccess(false), 2000);
     addTerminalLog('SETTINGS UPDATED: Hardware vault & voice engine configured.', 'success');
+  };
+
+  const applyPrivacyProfile = async (profile: 'local' | 'balanced' | 'cloud') => {
+    const enabled = profile !== 'local';
+    await setConfig({
+      privacyProfile: profile,
+      cloudTextEnabled: enabled,
+      cloudAudioEnabled: enabled,
+      cloudVisionEnabled: enabled,
+      cloudDocumentsEnabled: enabled,
+      cloudJournalEnabled: true,
+    });
+    addTerminalLog(`PRIVACY PROFILE: ${profile.toUpperCase()} activated.`, 'info');
+    haptics.success();
+  };
+
+  const eraseConversationData = async () => {
+    await memoryService.clearMemory();
+    await cloudJournalService.clear();
+    clearChatSessions();
+    resetConversation();
+    clearTerminalLogs();
+    await setConfig({ memoryNotes: '' });
+    setMemoryNotes('');
+    haptics.success();
+  };
+
+  const eraseCredentials = async () => {
+    await secretConfigService.clearAll();
+    await setConfig({ geminiApiKey: '', openRouterKey: '', braveSearchApiKey: '', fishAudioApiKey: '', elevenLabsApiKey: '' });
+    setGeminiApiKey('');
+    setOpenRouterKey('');
+    setBraveSearchApiKey('');
+    setFishApiKey('');
+    setElevenLabsApiKey('');
+    haptics.success();
   };
 
   /** Verify the Fish key here too — a wrong key should not be discovered while
@@ -348,12 +407,12 @@ export default function SettingsScreen() {
           onPress={() => router.push('/')}
         >
           <ChevronLeft size={16} color={palette.accent} />
-          <Text style={styles.backBtnText}>DASHBOARD</Text>
+          <Text style={styles.backBtnText}>{t('nav.dashboard', lang)}</Text>
         </TouchableOpacity>
 
         <View style={styles.titleWrap}>
           <Settings size={15} color={palette.accent} />
-          <Text style={styles.titleText}>SYSTEM &amp; CONNECTIVITY</Text>
+          <Text style={styles.titleText}>{t('settings.title', lang)}</Text>
         </View>
 
         <TouchableOpacity
@@ -361,11 +420,24 @@ export default function SettingsScreen() {
           accessibilityLabel={lang === 'fr' ? "Assistant de configuration" : 'Setup wizard'}
           onPress={() => router.push('/onboarding')}
         >
-          <Text style={styles.onboardingLinkText}>WIZARD</Text>
+          <Text style={styles.onboardingLinkText}>{t('settings.wizard', lang)}</Text>
         </TouchableOpacity>
       </View>
 
       <ScrollView style={styles.scrollArea} contentContainerStyle={styles.scrollContent}>
+        <View style={styles.engineeringDeck}>
+          <View style={styles.engineeringHeader}>
+            <Monitor size={16} color={palette.accent} />
+            <View><Text style={styles.engineeringKicker}>SEVEN // ENGINEERING DECK</Text><Text style={styles.engineeringTitle}>{lang === 'fr' ? 'CONTRÔLE SYSTÈME TOTAL' : 'TOTAL SYSTEM CONTROL'}</Text></View>
+          </View>
+          <View style={styles.engineeringMetrics}>
+            <View style={styles.engineeringMetric}><Brain size={14} color={geminiApiKey ? palette.success : palette.error} /><Text style={styles.engineeringValue}>{geminiApiKey ? 'ONLINE' : 'OFFLINE'}</Text><Text style={styles.engineeringLabel}>COGNITIVE CORE</Text></View>
+            <View style={styles.engineeringMetric}><Volume2 size={14} color={voiceEnabled ? palette.success : palette.warning} /><Text style={styles.engineeringValue}>{voiceEngine.toUpperCase()}</Text><Text style={styles.engineeringLabel}>VOICE ENGINE</Text></View>
+            <View style={styles.engineeringMetric}><Bell size={14} color={briefingEnabled ? palette.success : palette.textFaint} /><Text style={styles.engineeringValue}>{briefingEnabled ? 'ARMED' : 'STANDBY'}</Text><Text style={styles.engineeringLabel}>BRIEFING LINK</Text></View>
+            <View style={styles.engineeringMetric}><ShieldCheck size={14} color={palette.info} /><Text style={styles.engineeringValue}>{patchLogs.length}</Text><Text style={styles.engineeringLabel}>PATCH RECORDS</Text></View>
+          </View>
+        </View>
+
         {/* Section 0: Appearance */}
         <Text style={styles.sectionHeading}>{t('settings.appearance', lang).toUpperCase()}</Text>
         <View style={styles.card}>
@@ -449,7 +521,7 @@ export default function SettingsScreen() {
           {/* Avatar Core Engine — Gideon is the single holographic identity.
               The legacy orb engines are retired (see store config migration). */}
           <View style={[styles.appearanceRow, styles.appearanceRowSpaced]}>
-            <Text style={styles.inputLabel}>AVATAR CORE ENGINE</Text>
+            <Text style={styles.inputLabel}>{t('settings.avatarEngine', lang)}</Text>
             <View style={styles.chipRow}>
               <View style={[styles.langChip, styles.langChipActive]}>
                 <Text style={[styles.langChipText, styles.langChipTextActive]}>
@@ -462,9 +534,133 @@ export default function SettingsScreen() {
             </Text>
           </View>
 
+          <View style={styles.avatarCalibrationCard}>
+            <OrbView
+              mode="gideon"
+              size={118}
+              status={isTestingVoice ? 'speaking' : 'idle'}
+              speechText={
+                isTestingVoice
+                  ? VOICE_TEST_PHRASES[voiceLanguage] || VOICE_TEST_PHRASES['en-US']
+                  : ''
+              }
+              speechRate={voiceRate}
+              gyroEnabled={config.gyroEnabled ?? true}
+              themeColor={palette.accent}
+            />
+            <View style={styles.avatarCalibrationCopy}>
+              <Text style={styles.calibrationTitle}>
+                {lang === 'fr' ? 'CALIBRATION GIDEON' : 'GIDEON CALIBRATION'}
+              </Text>
+              <Text style={styles.avatarEngineHint}>
+                {lang === 'fr'
+                  ? 'Utilisez TESTER LA VOIX plus bas pour vérifier ensemble la voix, les visèmes et la mâchoire.'
+                  : 'Use TEST VOICE below to verify voice, visemes and jaw movement together.'}
+              </Text>
+            </View>
+          </View>
+
+          <View style={[styles.appearanceRow, styles.appearanceRowSpaced]}>
+            <Text style={styles.inputLabel}>{lang === 'fr' ? 'QUALITÉ AVATAR' : 'AVATAR QUALITY'}</Text>
+            <View style={styles.chipRow}>
+              {(['performance', 'balanced', 'high'] as const).map((quality) => (
+                <TouchableOpacity
+                  key={quality}
+                  style={[
+                    styles.langChip,
+                    (config.avatarQuality ?? 'balanced') === quality && styles.langChipActive,
+                  ]}
+                  onPress={() => setConfig({ avatarQuality: quality })}
+                  accessibilityState={{ selected: (config.avatarQuality ?? 'balanced') === quality }}
+                >
+                  <Text
+                    style={[
+                      styles.langChipText,
+                      (config.avatarQuality ?? 'balanced') === quality && styles.langChipTextActive,
+                    ]}
+                  >
+                    {quality === 'performance'
+                      ? 'PERF'
+                      : quality === 'balanced'
+                        ? lang === 'fr' ? 'ÉQUILIBRÉE' : 'BALANCED'
+                        : lang === 'fr' ? 'HAUTE' : 'HIGH'}
+                  </Text>
+                </TouchableOpacity>
+              ))}
+            </View>
+          </View>
+
+          <View style={styles.switchRow}>
+            <View style={styles.switchLabelLeft}>
+              <Monitor size={15} color={palette.info} />
+              <View>
+                <Text style={styles.switchTitle}>{lang === 'fr' ? 'PERFORMANCE ADAPTATIVE' : 'ADAPTIVE PERFORMANCE'}</Text>
+                <Text style={styles.switchDesc}>{lang === 'fr' ? 'Ajuste les effets selon le débit d’images réel.' : 'Adjusts effects from the measured frame rate.'}</Text>
+              </View>
+            </View>
+            <Switch
+              value={config.adaptivePerformanceEnabled !== false}
+              onValueChange={(value) => setConfig({ adaptivePerformanceEnabled: value })}
+              trackColor={{ false: palette.bgElevated, true: palette.accent }}
+              thumbColor="#FFF"
+            />
+          </View>
+
+          {[
+            {
+              key: 'avatarParallaxIntensity' as const,
+              label: lang === 'fr' ? 'INTENSITÉ PARALLAXE' : 'PARALLAX INTENSITY',
+              value: config.avatarParallaxIntensity ?? 1,
+              min: 0,
+              max: 2,
+            },
+            {
+              key: 'avatarExpressionIntensity' as const,
+              label: lang === 'fr' ? 'EXPRESSIVITÉ' : 'EXPRESSIVENESS',
+              value: config.avatarExpressionIntensity ?? 1,
+              min: 0.5,
+              max: 1.5,
+            },
+            {
+              key: 'avatarMouthIntensity' as const,
+              label: lang === 'fr' ? 'AMPLITUDE DE LA BOUCHE' : 'MOUTH AMPLITUDE',
+              value: config.avatarMouthIntensity ?? 1,
+              min: 0.65,
+              max: 1.4,
+            },
+          ].map((control) => (
+            <View key={control.key} style={[styles.appearanceRow, styles.appearanceRowSpaced]}>
+              <View style={styles.sliderLabelRow}>
+                <Text style={styles.inputLabel}>{control.label}</Text>
+                <Text style={styles.sliderValue}>{control.value.toFixed(2)}×</Text>
+              </View>
+              <Slider
+                style={styles.slider}
+                minimumValue={control.min}
+                maximumValue={control.max}
+                step={0.05}
+                value={control.value}
+                minimumTrackTintColor={palette.accent}
+                maximumTrackTintColor={palette.borderStrong}
+                thumbTintColor={palette.accent}
+                onSlidingComplete={(value) => setConfig({ [control.key]: value })}
+              />
+            </View>
+          ))}
+
+          <View style={[styles.appearanceRow, styles.appearanceRowSpaced]}>
+            <Text style={styles.inputLabel}>{lang === 'fr' ? 'REGARD CONTEXTUEL' : 'CONTEXTUAL GAZE'}</Text>
+            <Switch
+              value={config.avatarGazeEnabled !== false}
+              onValueChange={(value) => setConfig({ avatarGazeEnabled: value })}
+              trackColor={{ false: palette.bgElevated, true: palette.accent }}
+              thumbColor="#FFF"
+            />
+          </View>
+
           {/* Gyroscope Motion Toggle */}
           <View style={[styles.appearanceRow, styles.appearanceRowSpaced]}>
-            <Text style={styles.inputLabel}>GYROSCOPE 3D TILT DYNAMICS</Text>
+            <Text style={styles.inputLabel}>{t('settings.gyroscope', lang)}</Text>
             <Switch
               value={config.gyroEnabled ?? true}
               onValueChange={(val) => {
@@ -576,8 +772,59 @@ export default function SettingsScreen() {
           </Text>
         </View>
 
+        <Text style={styles.sectionHeading}>{lang === 'fr' ? 'CONFIDENTIALITÉ & CLOUD' : 'PRIVACY & CLOUD'}</Text>
+        <View style={styles.card}>
+          <Text style={styles.inputLabel}>{lang === 'fr' ? 'PROFIL DE TRAITEMENT' : 'PROCESSING PROFILE'}</Text>
+          <View style={styles.privacyProfiles}>
+            {(['local', 'balanced', 'cloud'] as const).map((profile) => (
+              <TouchableOpacity
+                key={profile}
+                style={[styles.privacyProfileBtn, (config.privacyProfile || 'balanced') === profile && styles.privacyProfileActive]}
+                onPress={() => applyPrivacyProfile(profile)}
+              >
+                <Text style={[styles.privacyProfileText, (config.privacyProfile || 'balanced') === profile && styles.privacyProfileTextActive]}>{profile.toUpperCase()}</Text>
+              </TouchableOpacity>
+            ))}
+          </View>
+          {[
+            ['cloudTextEnabled', 'Text / reasoning'],
+            ['cloudAudioEnabled', 'Voice transcription'],
+            ['cloudVisionEnabled', 'Vision & OCR'],
+            ['cloudDocumentsEnabled', 'Documents'],
+            ['cloudJournalEnabled', 'Metadata journal'],
+          ].map(([key, label]) => (
+            <View key={key} style={styles.switchRow}>
+              <Text style={styles.switchTitle}>{label}</Text>
+              <Switch
+                value={(config as any)[key] !== false}
+                onValueChange={(value) => setConfig({ [key]: value } as any)}
+                trackColor={{ false: palette.bgElevated, true: palette.accent }}
+                thumbColor="#FFF"
+              />
+            </View>
+          ))}
+          <View style={styles.cloudJournalHeader}>
+            <Text style={styles.inputLabel}>CLOUD JOURNAL — {cloudJournal.length} EVENTS</Text>
+            <TouchableOpacity onPress={() => cloudJournalService.clear()}><Text style={styles.removeSecretText}>CLEAR</Text></TouchableOpacity>
+          </View>
+          {cloudJournal.slice(0, 5).map((entry) => (
+            <Text key={entry.id} style={styles.cloudJournalLine}>
+              {new Date(entry.timestamp).toLocaleTimeString()} · {entry.provider.toUpperCase()} · {entry.action} · {entry.status.toUpperCase()}
+            </Text>
+          ))}
+          <Text style={styles.oauthExplainerText}>Metadata only — prompts, responses, media and credentials are never written to this journal.</Text>
+          <View style={styles.eraseRow}>
+            <TouchableOpacity style={styles.eraseBtn} onPress={() => Alert.alert('Erase private data?', 'This clears conversations, cognitive memory, terminal logs and the cloud journal.', [{ text: 'Cancel', style: 'cancel' }, { text: 'Erase', style: 'destructive', onPress: eraseConversationData }])}>
+              <Trash2 size={12} color={palette.error} /><Text style={styles.removeSecretText}>ERASE PRIVATE DATA</Text>
+            </TouchableOpacity>
+            <TouchableOpacity style={styles.eraseBtn} onPress={() => Alert.alert('Erase credentials?', 'This removes all provider API keys from the hardware vault.', [{ text: 'Cancel', style: 'cancel' }, { text: 'Erase', style: 'destructive', onPress: eraseCredentials }])}>
+              <ShieldCheck size={12} color={palette.error} /><Text style={styles.removeSecretText}>ERASE VAULT</Text>
+            </TouchableOpacity>
+          </View>
+        </View>
+
         {/* Section 1: Connectors & Integrations */}
-        <Text style={styles.sectionHeading}>SYSTEM CONNECTORS // ZERO-TRUST MATRIX</Text>
+        <Text style={styles.sectionHeading}>{t('settings.connectors', lang)}</Text>
 
         {/* Google Workspace Connector */}
         <ConnectorCard
@@ -604,7 +851,7 @@ export default function SettingsScreen() {
             accessibilityLabel="Disconnect Google"
             onPress={handleDisconnectGoogle}
           >
-            <Text style={styles.disconnectText}>DISCONNECT GOOGLE</Text>
+            <Text style={styles.disconnectText}>{t('settings.disconnectGoogle', lang)}</Text>
           </TouchableOpacity>
         )}
 
@@ -635,10 +882,10 @@ export default function SettingsScreen() {
         />
 
         {/* Section 2: Identity & Persona */}
-        <Text style={styles.sectionHeading}>IDENTITY &amp; NEURAL PROFILE</Text>
+        <Text style={styles.sectionHeading}>{t('settings.profile', lang)}</Text>
         <View style={styles.card}>
           <View style={styles.inputGroup}>
-            <Text style={styles.inputLabel}>ASSISTANT IDENTIFIER</Text>
+            <Text style={styles.inputLabel}>{t('settings.assistantIdentifier', lang)}</Text>
             <TextInput
               style={styles.textInput}
               value={assistantName}
@@ -649,7 +896,7 @@ export default function SettingsScreen() {
           </View>
 
           <View style={styles.inputGroup}>
-            <Text style={styles.inputLabel}>USER CALLSIGN / NAME</Text>
+            <Text style={styles.inputLabel}>{t('settings.userCallsign', lang)}</Text>
             <TextInput
               style={styles.textInput}
               value={userName}
@@ -661,25 +908,55 @@ export default function SettingsScreen() {
         </View>
 
         {/* Section 3: API Keys & Hardware SecureStore */}
-        <Text style={styles.sectionHeading}>HARDWARE KEYSTORE (EXPO-SECURE-STORE)</Text>
+        <Text style={styles.sectionHeading}>{t('settings.secureStore', lang)}</Text>
+        <CapabilityHero
+          eyebrow={t('settings.vaultEyebrow', lang)}
+          title={t('settings.vaultTitle', lang)}
+          description={t('settings.vaultDescription', lang)}
+          icon={<ShieldCheck size={24} color={palette.accent} />}
+          metric={{
+            value: String(
+              [geminiApiKey, openRouterKey, braveSearchApiKey, fishApiKey, elevenLabsApiKey].filter(
+                (value) => value.trim().length > 0
+              ).length
+            ),
+            label: t('settings.keysConfigured', lang),
+          }}
+          chips={
+            Platform.OS === 'web'
+              ? [{ label: t('settings.sessionOnly', lang), tone: 'warning' }]
+              : [
+                  { label: t('settings.individualEntries', lang), tone: 'success' },
+                  { label: t('settings.sanitizedPrefs', lang), tone: 'accent' },
+                ]
+          }
+        />
+        <ProviderHealthPanel
+          language={lang}
+          providers={[
+            { id: 'gemini', label: 'Gemini', key: geminiApiKey },
+            { id: 'openrouter', label: 'OpenRouter', key: openRouterKey },
+            { id: 'brave', label: 'Brave Search', key: braveSearchApiKey },
+          ]}
+        />
         <View style={styles.card}>
           <View style={styles.inputGroup}>
             <View style={styles.inputHeaderRow}>
-              <Text style={styles.inputLabel}>GEMINI API KEY (FLASH & PRO)</Text>
+              <Text style={styles.inputLabel}>{t('settings.geminiKey', lang)}</Text>
               <TouchableOpacity
                 style={styles.getKeyBtn}
                 accessibilityLabel="Get Gemini API key"
                 onPress={handleGetApiKey}
               >
                 <ExternalLink size={10} color={palette.bgDeep} />
-                <Text style={styles.getKeyBtnText}>GET API</Text>
+                <Text style={styles.getKeyBtnText}>{t('settings.getApi', lang)}</Text>
               </TouchableOpacity>
             </View>
             <TextInput
               style={styles.textInput}
               value={geminiApiKey}
               onChangeText={setGeminiApiKey}
-              placeholder="AIzaSy... (AES-256 encrypted)"
+              placeholder="AIzaSy... (system secure store on mobile)"
               placeholderTextColor={palette.textFaint}
               autoCapitalize="none"
               autoCorrect={false}
@@ -687,10 +964,22 @@ export default function SettingsScreen() {
               // open over a shoulder, and the vault claim should be visible too.
               secureTextEntry
             />
+            {!!config.geminiApiKey && (
+              <TouchableOpacity
+                style={styles.removeSecretBtn}
+                onPress={async () => {
+                  setGeminiApiKey('');
+                  await setConfig({ geminiApiKey: '' });
+                }}
+              >
+                <Trash2 size={11} color={palette.error} />
+                <Text style={styles.removeSecretText}>{lang === 'fr' ? 'SUPPRIMER LA CLÉ' : 'REMOVE KEY'}</Text>
+              </TouchableOpacity>
+            )}
           </View>
 
           <View style={styles.inputGroup}>
-            <Text style={styles.inputLabel}>GOOGLE OAUTH CLIENT ID (REAL GMAIL)</Text>
+            <Text style={styles.inputLabel}>{t('settings.googleClientId', lang)}</Text>
             <TextInput
               style={styles.textInput}
               value={googleClientId}
@@ -704,7 +993,7 @@ export default function SettingsScreen() {
 
           <View style={styles.inputGroup}>
             <View style={styles.inputHeaderRow}>
-              <Text style={styles.inputLabel}>OPENROUTER KEY (SECOND BRAIN, OPTIONAL)</Text>
+              <Text style={styles.inputLabel}>{t('settings.openRouterKey', lang)}</Text>
               <View
                 style={[
                   styles.fallbackBadge,
@@ -737,12 +1026,59 @@ export default function SettingsScreen() {
               autoCorrect={false}
               secureTextEntry
             />
+            {!!config.openRouterKey && (
+              <TouchableOpacity
+                style={styles.removeSecretBtn}
+                onPress={async () => {
+                  setOpenRouterKey('');
+                  await setConfig({ openRouterKey: '' });
+                }}
+              >
+                <Trash2 size={11} color={palette.error} />
+                <Text style={styles.removeSecretText}>{lang === 'fr' ? 'SUPPRIMER LA CLÉ' : 'REMOVE KEY'}</Text>
+              </TouchableOpacity>
+            )}
             <Text style={styles.oauthExplainerText}>
-              Used automatically when Gemini has no key configured or is unreachable —
-              real conversational answers instead of the local keyword engine.
+              {lang === 'fr'
+                ? 'Utilisé automatiquement si Gemini n’est pas configuré ou reste inaccessible — des réponses conversationnelles réelles plutôt que le moteur local par mots-clés.'
+                : 'Used automatically when Gemini has no key configured or is unreachable — real conversational answers instead of the local keyword engine.'}
             </Text>
           </View>
+
+          <View style={styles.inputGroup}>
+            <Text style={styles.inputLabel}>{t('settings.braveKey', lang)}</Text>
+            <TextInput
+              style={styles.textInput}
+              value={braveSearchApiKey}
+              onChangeText={setBraveSearchApiKey}
+              placeholder="BSA..."
+              placeholderTextColor={palette.textFaint}
+              autoCapitalize="none"
+              autoCorrect={false}
+              secureTextEntry
+            />
+            {!!config.braveSearchApiKey && (
+              <TouchableOpacity
+                style={styles.removeSecretBtn}
+                onPress={async () => {
+                  setBraveSearchApiKey('');
+                  await setConfig({ braveSearchApiKey: '' });
+                }}
+              >
+                <Trash2 size={11} color={palette.error} />
+                <Text style={styles.removeSecretText}>{lang === 'fr' ? 'SUPPRIMER LA CLÉ' : 'REMOVE KEY'}</Text>
+              </TouchableOpacity>
+            )}
+            <Text style={styles.oauthExplainerText}>{t('settings.braveHint', lang)}</Text>
+          </View>
         </View>
+
+        <StorageGuardrails
+          language={lang}
+          messages={messageCount}
+          sessions={sessionCount}
+          routines={routineCount}
+        />
 
         {/* Section 4: Long-term memory */}
         <Text style={styles.sectionHeading}>{t('settings.memory', lang).toUpperCase()}</Text>
@@ -807,14 +1143,14 @@ export default function SettingsScreen() {
         </View>
 
         {/* Section 6: Voice & Speech */}
-        <Text style={styles.sectionHeading}>AUDIO DSP &amp; SPEECH SYNTHESIS</Text>
+        <Text style={styles.sectionHeading}>{t('settings.audio', lang)}</Text>
         <View style={styles.card}>
           <View style={styles.switchRow}>
             <View style={styles.switchLabelLeft}>
               <Volume2 size={16} color={palette.success} />
               <View>
-                <Text style={styles.switchTitle}>Expo Speech TTS Output</Text>
-                <Text style={styles.switchDesc}>Speak AI responses aloud automatically</Text>
+                <Text style={styles.switchTitle}>{t('settings.tts', lang)}</Text>
+                <Text style={styles.switchDesc}>{t('settings.ttsHint', lang)}</Text>
               </View>
             </View>
             <Switch
@@ -887,7 +1223,7 @@ export default function SettingsScreen() {
 
           {/* Language selector */}
           <View style={styles.sliderGroup}>
-            <Text style={styles.sliderLabel}>VOICE LANGUAGE</Text>
+            <Text style={styles.sliderLabel}>{t('settings.voiceLanguage', lang)}</Text>
             <View style={styles.langRow}>
               {VOICE_LANGUAGES.map((voiceLang) => (
                 <TouchableOpacity
@@ -914,7 +1250,7 @@ export default function SettingsScreen() {
 
           {/* Voice Engine Mode (System TTS vs Fish Audio JARVIS vs legacy ElevenLabs) */}
           <View style={styles.sliderGroup}>
-            <Text style={styles.sliderLabel}>NEURAL VOICE ENGINE</Text>
+            <Text style={styles.sliderLabel}>{t('settings.voiceEngine', lang)}</Text>
             <View style={styles.langRow}>
               {(
                 [
@@ -955,7 +1291,7 @@ export default function SettingsScreen() {
           {voiceEngine === 'fish' && (
             <>
               <View style={styles.inputGroup}>
-                <Text style={styles.inputLabel}>FISH AUDIO API KEY</Text>
+                <Text style={styles.inputLabel}>{t('settings.fishKey', lang)}</Text>
                 <TextInput
                   style={styles.textInput}
                   value={fishApiKey}
@@ -991,7 +1327,7 @@ export default function SettingsScreen() {
                 </View>
               </View>
               <View style={styles.inputGroup}>
-                <Text style={styles.inputLabel}>JARVIS VOICE — ENGLISH</Text>
+                <Text style={styles.inputLabel}>{t('settings.jarvisEnglish', lang)}</Text>
                 <TextInput
                   style={styles.textInput}
                   value={fishVoiceIdEn}
@@ -1003,7 +1339,7 @@ export default function SettingsScreen() {
                 />
               </View>
               <View style={styles.inputGroup}>
-                <Text style={styles.inputLabel}>JARVIS VOICE — FRANÇAIS</Text>
+                <Text style={styles.inputLabel}>{t('settings.jarvisFrench', lang)}</Text>
                 <TextInput
                   style={styles.textInput}
                   value={fishVoiceIdFr}
@@ -1020,7 +1356,7 @@ export default function SettingsScreen() {
           {voiceEngine === 'elevenlabs' && (
             <>
               <View style={styles.inputGroup}>
-                <Text style={styles.inputLabel}>ELEVENLABS API KEY</Text>
+                <Text style={styles.inputLabel}>{t('settings.elevenKey', lang)}</Text>
                 <TextInput
                   style={styles.textInput}
                   value={elevenLabsApiKey}
@@ -1033,7 +1369,7 @@ export default function SettingsScreen() {
                 />
               </View>
               <View style={styles.inputGroup}>
-                <Text style={styles.inputLabel}>VOICE ID (DEFAULT: RACHEL)</Text>
+                <Text style={styles.inputLabel}>{t('settings.voiceId', lang)}</Text>
                 <TextInput
                   style={styles.textInput}
                   value={elevenLabsVoiceId}
@@ -1075,13 +1411,13 @@ export default function SettingsScreen() {
         </View>
 
         {/* Section 7: Anti-Panic Engine & Self-Healing */}
-        <Text style={styles.sectionHeading}>ANTI-PANIC ENGINE // AST HOT-PATCHING</Text>
+        <Text style={styles.sectionHeading}>{t('settings.diagnostics', lang)}</Text>
         <View style={styles.card}>
           <View style={styles.astStatusRow}>
             <View style={styles.astHeaderLeft}>
               <ShieldCheck size={16} color={palette.error} />
               <View>
-                <Text style={styles.astTitle}>AST Boundary Protection: ARMED</Text>
+                <Text style={styles.astTitle}>{t('settings.diagnosticsStatus', lang)}</Text>
                 <Text style={styles.astDesc}>
                   Total Patches Applied: {patchLogs.length} | Last: #{patchLogs[0]?.id || 'NONE'}
                 </Text>
@@ -1094,7 +1430,7 @@ export default function SettingsScreen() {
               onPress={() => setShowSelfHealingModal(true)}
             >
               <Bug size={12} color={palette.text} />
-              <Text style={styles.viewPatchBtnText}>INSPECT</Text>
+              <Text style={styles.viewPatchBtnText}>{t('settings.inspect', lang)}</Text>
             </TouchableOpacity>
           </View>
         </View>
@@ -1159,7 +1495,7 @@ export default function SettingsScreen() {
           {savedSuccess ? (
             <>
               <CheckCircle2 size={16} color={palette.bgDeep} />
-              <Text style={styles.saveBtnText}>SAVED &amp; ENCRYPTED</Text>
+              <Text style={styles.saveBtnText}>{t('settings.saved', lang)}</Text>
             </>
           ) : (
             <Text style={styles.saveBtnText}>{t('common.save', lang)}</Text>
@@ -1235,6 +1571,14 @@ const settingsStyles = (t: Palette) =>
       paddingTop: 12,
       paddingBottom: 40,
     },
+    engineeringDeck: { borderWidth: 1, borderColor: t.borderStrong, borderRadius: 11, backgroundColor: 'rgba(3,10,20,.94)', padding: 12, marginBottom: 8 },
+    engineeringHeader: { flexDirection: 'row', alignItems: 'center', gap: 8, paddingBottom: 9, borderBottomWidth: 1, borderBottomColor: t.border },
+    engineeringKicker: { color: t.accent, fontFamily: FONT.mono, fontSize: 7, letterSpacing: 1.2 },
+    engineeringTitle: { color: t.text, fontFamily: FONT.display, fontSize: 12, marginTop: 2 },
+    engineeringMetrics: { flexDirection: 'row', gap: 5, marginTop: 9 },
+    engineeringMetric: { flex: 1, minHeight: 66, alignItems: 'center', justifyContent: 'center', borderWidth: 1, borderColor: t.border, borderRadius: 6, backgroundColor: t.accentSoft, padding: 5 },
+    engineeringValue: { color: t.text, fontFamily: FONT.display, fontSize: 8, marginTop: 5 },
+    engineeringLabel: { color: t.textFaint, fontFamily: FONT.mono, fontSize: 5.2, marginTop: 3, textAlign: 'center' },
     sectionHeading: {
       fontFamily: FONT.mono,
       color: t.accent,
@@ -1244,6 +1588,15 @@ const settingsStyles = (t: Palette) =>
       marginTop: 12,
       marginBottom: 6,
     },
+    privacyProfiles: { flexDirection: 'row', gap: 6, marginBottom: 10 },
+    privacyProfileBtn: { flex: 1, minHeight: 38, alignItems: 'center', justifyContent: 'center', borderWidth: 1, borderColor: t.border, borderRadius: 5, backgroundColor: t.bgDeep },
+    privacyProfileActive: { borderColor: t.accent, backgroundColor: t.accentSoft },
+    privacyProfileText: { color: t.textFaint, fontFamily: FONT.monoBold, fontSize: 8 },
+    privacyProfileTextActive: { color: t.accent },
+    cloudJournalHeader: { flexDirection: 'row', justifyContent: 'space-between', alignItems: 'center', borderTopWidth: 1, borderTopColor: t.border, paddingTop: 10, marginTop: 5 },
+    cloudJournalLine: { color: t.textDim, fontFamily: FONT.mono, fontSize: 8, lineHeight: 15 },
+    eraseRow: { flexDirection: 'row', gap: 7, marginTop: 10 },
+    eraseBtn: { flex: 1, minHeight: 40, flexDirection: 'row', alignItems: 'center', justifyContent: 'center', gap: 5, borderWidth: 1, borderColor: t.error, borderRadius: 5 },
     card: {
       backgroundColor: t.bgElevated,
       borderRadius: 8,
@@ -1353,6 +1706,24 @@ const settingsStyles = (t: Palette) =>
       color: t.bgDeep,
       fontSize: 8.5,
       fontWeight: '800',
+    },
+    removeSecretBtn: {
+      minHeight: 36,
+      alignSelf: 'flex-end',
+      flexDirection: 'row',
+      alignItems: 'center',
+      gap: 5,
+      paddingHorizontal: 8,
+      marginTop: 5,
+      borderRadius: 7,
+      backgroundColor: t.bgDeep,
+      borderWidth: 1,
+      borderColor: t.error,
+    },
+    removeSecretText: {
+      color: t.error,
+      fontFamily: FONT.monoBold,
+      fontSize: 8.5,
     },
     textInput: {
       backgroundColor: t.bgDeep,
@@ -1557,6 +1928,28 @@ const settingsStyles = (t: Palette) =>
       fontSize: 8.5,
       marginTop: 5,
       lineHeight: 12,
+    },
+    avatarCalibrationCard: {
+      flexDirection: 'row',
+      alignItems: 'center',
+      gap: 10,
+      backgroundColor: t.bgDeep,
+      borderWidth: 1,
+      borderColor: t.borderStrong,
+      borderRadius: 12,
+      padding: 8,
+      marginBottom: 10,
+      overflow: 'hidden',
+    },
+    avatarCalibrationCopy: {
+      flex: 1,
+      minWidth: 0,
+    },
+    calibrationTitle: {
+      color: t.accent,
+      fontFamily: FONT.display,
+      fontSize: 13,
+      letterSpacing: 0.8,
     },
     voiceTestBtn: {
       flexDirection: 'row',

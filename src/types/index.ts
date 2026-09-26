@@ -14,6 +14,8 @@ export interface AssistantConfig {
   city?: string;
   geminiApiKey: string;
   openRouterKey?: string;
+  /** Optional Brave Search API key for general web results. */
+  braveSearchApiKey?: string;
   /** Google Cloud OAuth Client ID (Web application type) for real Gmail access. */
   googleClientId?: string;
   themeColor: string;
@@ -53,10 +55,40 @@ export interface AssistantConfig {
       `size` (S/M/L, how many of the 3 grid columns the tile spans) is
       optional so decks saved before resizing existed keep rendering at 'S'. */
   widgetLayout?: Record<string, { x: number; y: number; size?: 'S' | 'M' | 'L' }>;
+  /** Schema revision prevents newly added modules from overlapping an older deck. */
+  widgetLayoutVersion?: number;
   /** Module ids the user removed from the dashboard deck. */
   widgetHidden?: string[];
+  /** Android Storage Access Framework directory selected by the user. The URI
+      grants persistent scoped access without broad storage permissions. */
+  organizerDirectoryUri?: string;
   wakeWordEnabled?: boolean;
   gyroEnabled?: boolean;
+  /** Avatar rendering budget. High keeps all anatomy and effects; performance
+      trims decorative detail while preserving speech and expressions. */
+  avatarQuality?: 'performance' | 'balanced' | 'high';
+  adaptivePerformanceEnabled?: boolean;
+  /** Generation 4 autonomous runtime. Background execution remains OS-budgeted. */
+  autonomousBackgroundEnabled?: boolean;
+  proactiveIntelligenceEnabled?: boolean;
+  activeSecurityProfile?: 'personal' | 'work' | 'guest';
+  localInferenceEnabled?: boolean;
+  /** Optional user-hosted OpenAI-compatible endpoint; never hard-coded. */
+  localModelEndpoint?: string;
+  localModelName?: string;
+  syncEnabled?: boolean;
+  /** User-hosted E2EE sync endpoint. Payloads are encrypted before upload. */
+  syncEndpoint?: string;
+  githubRepository?: string;
+  syncToken?: string;
+  syncEncryptionKey?: string;
+  githubToken?: string;
+  localModelToken?: string;
+  /** User-tunable Gideon motion/expression multipliers. */
+  avatarParallaxIntensity?: number;
+  avatarExpressionIntensity?: number;
+  avatarMouthIntensity?: number;
+  avatarGazeEnabled?: boolean;
   /** Shows a small text caption under icon-only buttons across the app
       (chat header, history actions...) — helps both readability and
       accessibility for anyone unsure what a bare icon does. */
@@ -73,6 +105,13 @@ export interface AssistantConfig {
       Only ever turned on if the device actually has biometrics/passcode
       enrolled (checked live in Settings before the switch can flip). */
   appLockEnabled?: boolean;
+  /** Privacy profiles control which data classes may leave the device. */
+  privacyProfile?: 'local' | 'balanced' | 'cloud';
+  cloudTextEnabled?: boolean;
+  cloudAudioEnabled?: boolean;
+  cloudVisionEnabled?: boolean;
+  cloudDocumentsEnabled?: boolean;
+  cloudJournalEnabled?: boolean;
   /** Debounce bookkeeping for conditional routines, persisted so a
       battery_low / wifi_connect routine does not re-fire after every app
       restart. Keyed by routine id; the shape mirrors
@@ -113,6 +152,7 @@ export interface ChatMessage {
       | 'research_pdf'
       | 'self_heal'
       | 'web_search'
+      | 'live_info'
       | 'device_action'
       | 'vision'
       | 'document_analyze'
@@ -154,6 +194,11 @@ export interface OrganizeFile {
   category: FileCategory;
   size: number;
   extension: string;
+  /** Optional cognitive index generated on demand; never changes file bytes. */
+  semanticText?: string;
+  /** Cloud OCR is explicit and opt-in per file. */
+  ocrText?: string;
+  duplicateGroup?: string;
 }
 
 export interface OrganizeResult {
@@ -164,6 +209,13 @@ export interface OrganizeResult {
   files: OrganizeFile[];
   status: 'active' | 'undone';
   message: string;
+}
+
+export interface DaveProjectVersion {
+  id: string;
+  timestamp: number;
+  label: string;
+  files: Record<string, string>;
 }
 
 export interface DaveProject {
@@ -179,6 +231,15 @@ export interface DaveProject {
   };
   folderPath: string;
   previewHtml: string;
+  versions?: DaveProjectVersion[];
+  projectKind?: 'static-web' | 'react' | 'expo' | 'node' | 'python';
+  commands?: { install?: string; start?: string; test?: string };
+  lastTestReport?: {
+    passed: number;
+    failed: number;
+    checks: { name: string; ok: boolean; detail: string }[];
+    timestamp: number;
+  };
 }
 
 /**
@@ -249,6 +310,11 @@ export interface AutomationRoutine {
    *  stamp, and it is absent from persisted routines created before
    *  idempotency was added. */
   lastHandledNotificationAt?: number;
+  graph?: {
+    positions: Record<string, { x: number; y: number }>;
+    conditionExpression?: string;
+    falseAction?: RoutineAction;
+  };
 }
 
 
@@ -259,9 +325,13 @@ export interface PatchLog {
   error: string;
   originalSnippet: string;
   fixedSnippet: string;
-  status: 'applied' | 'verified' | 'rolled_back';
+  status: 'suggested' | 'reported' | 'applied' | 'verified' | 'rolled_back';
   engine: string;
   synthesizerOutput: string;
+  reproductionSteps?: string[];
+  risk?: 'low' | 'medium' | 'high' | 'critical';
+  canary?: { status: 'pending' | 'passed' | 'failed'; checks: string[] };
+  rollbackPlan?: string;
 }
 
 export interface GoogleWorkspaceState {
@@ -293,6 +363,9 @@ export interface ResearchDocument {
   title: string;
   summary: string;
   sections: { heading: string; body: string }[];
+  /** Sources actually retrieved before synthesis. Empty means the document is
+   * an ungrounded draft and the UI/PDF must say so explicitly. */
+  sources?: { title: string; url: string; snippet?: string }[];
   content: string;
   pdfUri: string;
   timestamp: number;

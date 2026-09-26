@@ -14,6 +14,7 @@ import { memoryService } from '../services/memoryService';
 import { contactsService, ResolvedContact } from '../services/contactsService';
 import { calendarService } from '../services/calendarService';
 import { routineService, validateTrigger, isTimeBasedTrigger } from '../services/routineService';
+import { fetchNews, fetchWeather } from '../services/liveInfoService';
 
 /**
  * Tool declarations and execution, split out of `sevenAgent.ts`.
@@ -100,6 +101,20 @@ export const TOOL_DECLARATIONS: FunctionDeclaration[] = [
     name: 'forget_memory',
     description: 'Erase the permanent user memory notes (when the user asks you to forget everything / reset your memory).',
     parameters: { type: Type.OBJECT, properties: {} },
+  },
+  {
+    name: 'get_live_weather_and_news',
+    description:
+      'Get current real weather and current news headlines. Use this whenever the user asks for weather, météo, news, actualités, headlines, or a live daily update.',
+    parameters: {
+      type: Type.OBJECT,
+      properties: {
+        city: {
+          type: Type.STRING,
+          description: 'Optional city; defaults to the city saved in app settings.',
+        },
+      },
+    },
   },
   {
     name: 'search_web',
@@ -516,6 +531,40 @@ onEvent?: (line: string) => void
           status: 'completed',
           summary: 'Long-term memory cleared by user request.',
         },
+      };
+    }
+
+    case 'get_live_weather_and_news': {
+      const language = (store.config.language || 'en') === 'fr' ? 'fr' : 'en';
+      const city = String(args.city || store.config.city || 'Antananarivo').trim();
+      onEvent?.(`LIVE INFO: loading weather and current headlines for ${city}...`);
+      const [weatherResult, newsResult] = await Promise.all([
+        fetchWeather(city, language),
+        fetchNews(language),
+      ]);
+      const live = { weather: weatherResult, news: newsResult };
+      const weather = live.weather
+        ? language === 'fr'
+          ? `Météo actuelle à ${live.weather.location} : ${live.weather.tempC} °C, ${live.weather.condition.toLowerCase()}, humidité ${live.weather.humidity} %, vent ${live.weather.windKmh} km/h.`
+          : `Current weather in ${live.weather.location}: ${live.weather.tempC} °C, ${live.weather.condition.toLowerCase()}, humidity ${live.weather.humidity}%, wind ${live.weather.windKmh} km/h.`
+        : language === 'fr'
+          ? `La météo en direct est momentanément indisponible pour ${city}.`
+          : `Live weather is temporarily unavailable for ${city}.`;
+      const headlines = live.news.slice(0, 5);
+      const newsText = headlines.length
+        ? headlines.map((item, index) => `${index + 1}. ${item.title} — ${item.source}`).join('\n')
+        : language === 'fr'
+          ? 'Les flux d’actualité sont momentanément indisponibles.'
+          : 'Live news feeds are temporarily unavailable.';
+      return {
+        text: `${weather}\n\n${language === 'fr' ? 'Actualités :' : 'Headlines:'}\n${newsText}`,
+        toolCall: {
+          name: 'live_info',
+          status: 'completed',
+          summary: `Loaded ${headlines.length} live headline(s) and weather for ${city}.`,
+          result: live,
+        },
+        raw: live,
       };
     }
 

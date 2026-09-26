@@ -1,6 +1,15 @@
 import { Platform } from 'react-native';
-import * as QuickActions from 'expo-quick-actions';
+import type * as QuickActionsType from 'expo-quick-actions';
 import type { Language } from '../theme/i18n';
+import { isExpoGo } from './notificationsAdapter';
+
+let QuickActions: typeof QuickActionsType | null = null;
+if (Platform.OS !== 'web' && !isExpoGo) {
+  try {
+    // eslint-disable-next-line @typescript-eslint/no-require-imports
+    QuickActions = require('expo-quick-actions');
+  } catch { QuickActions = null; }
+}
 
 /**
  * Long-press-the-app-icon shortcuts (Android "App Shortcuts" / iOS "Home
@@ -32,7 +41,7 @@ class QuickActionsService {
   }
 
   public async isSupported(): Promise<boolean> {
-    if (Platform.OS === 'web') return false;
+    if (!QuickActions) return false;
     try {
       return await QuickActions.isSupported();
     } catch {
@@ -42,7 +51,7 @@ class QuickActionsService {
 
   /** Registers the four highest-value shortcuts, localized. */
   public async registerDefaultActions(lang: Language = 'en'): Promise<void> {
-    if (Platform.OS === 'web') return;
+    if (!QuickActions) return;
     const isFr = lang === 'fr';
     try {
       await QuickActions.setItems([

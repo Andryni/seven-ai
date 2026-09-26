@@ -1,6 +1,6 @@
 import React, { useEffect, useMemo, useState } from 'react';
 import { View, Dimensions, Animated, Easing } from 'react-native';
-import Svg, { Circle, Defs, RadialGradient, Stop } from 'react-native-svg';
+import Svg, { Circle, Defs, Line, Path, RadialGradient, Stop } from 'react-native-svg';
 import { useTheme, useThemeStyles } from '../theme/theme';
 import type { Palette } from '../theme/theme';
 import { useReducedMotion } from '../hooks/useReducedMotion';
@@ -206,8 +206,20 @@ export const ParticleBackground: React.FC<{ children?: React.ReactNode }> = ({ c
           />
         </Animated.View>
 
-        {/* Subtle grid lines for HUD effect */}
-        <View style={styles.gridOverlay} />
+        {/* SEVEN datum field: an asymmetric, woven navigation chart rather
+            than the generic full-screen cyber grid used by many AI products. */}
+        <Svg width="100%" height="100%" style={styles.gridOverlay} pointerEvents="none">
+          {[12, 28, 44, 60, 76, 92].map((x) => (
+            <Line key={`v-${x}`} x1={`${x}%`} y1="0" x2={`${x}%`} y2="100%" stroke={palette.accent} strokeWidth="0.55" opacity="0.22" />
+          ))}
+          {[10, 25, 40, 55, 70, 85].map((y) => (
+            <Line key={`h-${y}`} x1="0" y1={`${y}%`} x2="100%" y2={`${y}%`} stroke={palette.accent} strokeWidth="0.45" opacity="0.15" />
+          ))}
+          <Line x1="13%" y1="0" x2="13%" y2="100%" stroke={palette.warning} strokeWidth="1.2" opacity="0.38" />
+          <Path d="M 0 180 L 130 50 L 250 170 L 410 10" stroke={palette.orbOuter} strokeWidth="0.8" opacity="0.18" fill="none" />
+          <Circle cx="13%" cy="35%" r="4" fill="none" stroke={palette.accent} strokeWidth="1" opacity="0.5" />
+          <Circle cx="13%" cy="35%" r="1.5" fill={palette.accent} opacity="0.75" />
+        </Svg>
       </View>
 
       {children}
@@ -227,9 +239,7 @@ const particleStyles = (t: Palette) =>
       left: 0,
       right: 0,
       bottom: 0,
-      opacity: 0.03,
-      borderWidth: 1,
-      borderColor: t.accent,
+      opacity: t.isDark ? 0.42 : 0.24,
     },
     absoluteCover: {
       position: 'absolute' as const,

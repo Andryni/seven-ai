@@ -1,7 +1,6 @@
 import { useEffect } from 'react';
 import { AppState, Platform, type AppStateStatus } from 'react-native';
-import { requestWidgetUpdate } from 'react-native-android-widget';
-import { WIDGET_NAME, buildWidget } from '../widgets/buildSevenWidget';
+import { refreshAndroidWidget } from '../services/widgetAdapter';
 
 /**
  * Keeps the home-screen widget's glance lines fresh on app foreground.
@@ -28,13 +27,7 @@ export function useWidgetRefresh(): void {
     if (Platform.OS !== 'android') return;
 
     const refresh = () => {
-      requestWidgetUpdate({
-        widgetName: WIDGET_NAME,
-        renderWidget: () => buildWidget(),
-        // No widget on the home screen — nothing to update, nothing to clean up.
-      }).catch(() => {
-        // Best-effort by design; the OS timer still covers the widget.
-      });
+      void refreshAndroidWidget();
     };
 
     refresh();

@@ -1,4 +1,4 @@
-import React, { useEffect, useRef } from 'react';
+import React, { useEffect, useRef, useState } from 'react';
 import { Platform, View, StyleSheet } from 'react-native';
 import { WebView } from 'react-native-webview';
 import { sandboxService } from '../services/sandboxService';
@@ -17,6 +17,12 @@ import type { SandboxExecutionResult } from '../services/sandboxService';
  */
 const EXECUTOR_HTML = `<!DOCTYPE html>
 <html>
+<head>
+  <!-- Code may calculate locally but cannot contact a server, load a resource,
+       submit a form or navigate a parent. unsafe-eval is required solely for
+       the isolated runner's Function constructor. -->
+  <meta http-equiv="Content-Security-Policy" content="default-src 'none'; script-src 'unsafe-inline' 'unsafe-eval'; connect-src 'none'; img-src 'none'; media-src 'none'; style-src 'none'; form-action 'none'; base-uri 'none'">
+</head>
 <body>
 <script>
   function serialize(v) {
@@ -83,6 +89,9 @@ interface PendingRequest {
 export const SandboxExecutorHost: React.FC = () => {
   const webViewRef = useRef<WebView>(null);
   const readyRef = useRef(false);
+  // A blocking infinite loop cannot be interrupted from inside that WebView.
+  // Remounting creates a fresh renderer after the host-side deadline expires.
+  const [generation, setGeneration] = useState(0);
   const pendingRef = useRef(new Map<string, PendingRequest>());
   const requestSeqRef = useRef(0);
 
@@ -113,6 +122,8 @@ export const SandboxExecutorHost: React.FC = () => {
               logs: [],
               executionTimeMs: 5000,
             });
+            readyRef.current = false;
+            setGeneration((value) => value + 1);
           }
         }, 5000);
         pending.set(requestId, { resolve, timer });
@@ -130,7 +141,7 @@ export const SandboxExecutorHost: React.FC = () => {
       }
       pending.clear();
     };
-  }, []);
+  }, [generation]);
 
   if (Platform.OS === 'web') return null;
 
@@ -169,13 +180,19 @@ export const SandboxExecutorHost: React.FC = () => {
   return (
     <View style={styles.offscreen} pointerEvents="none">
       <WebView
+        key={generation}
         ref={webViewRef}
-        source={{ html: EXECUTOR_HTML }}
+        source={{ html: EXECUTOR_HTML, baseUrl: 'about:blank' }}
         onMessage={handleMessage}
-        originWhitelist={['*']}
+        originWhitelist={['about:blank']}
+        onShouldStartLoadWithRequest={(request) =>
+          request.url === 'about:blank' || request.url.startsWith('data:text/html')
+        }
         javaScriptEnabled
         domStorageEnabled={false}
         allowFileAccess={false}
+        allowUniversalAccessFromFileURLs={false}
+        mixedContentMode="never"
         style={styles.webView}
       />
     </View>
