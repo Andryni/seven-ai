@@ -2,7 +2,6 @@ import React, { useEffect, useState } from 'react';
 import { useRouter, usePathname } from 'expo-router';
 import { Platform, View, StyleSheet } from 'react-native';
 import * as Updates from 'expo-updates';
-import * as Notifications from 'expo-notifications';
 import { Stack } from 'expo-router';
 import { StatusBar } from 'expo-status-bar';
 import { useFonts } from 'expo-font';
@@ -13,6 +12,7 @@ import { useWidgetRefresh } from '../src/hooks/useWidgetRefresh';
 import { fileOrganizer } from '../src/services/fileOrganizer';
 import { routineService } from '../src/services/routineService';
 import { installNotificationHandler } from '../src/services/notificationPresentation';
+import { getNotificationsModule } from '../src/services/notificationsAdapter';
 import { ThemeProvider, PALETTES } from '../src/theme/theme';
 import type { Palette } from '../src/theme/theme';
 import { useResolvedUiMode } from '../src/hooks/useResolvedUiMode';
@@ -94,9 +94,10 @@ export default function RootLayout() {
   // after processing, so a cold launch no longer replays yesterday's tap
   // over and over.
   useEffect(() => {
-    if (Platform.OS === 'web') return;
+    const notifications = getNotificationsModule();
+    if (!notifications) return;
 
-    const runFromResponse = (response: Notifications.NotificationResponse | null) => {
+    const runFromResponse = (response: import('expo-notifications').NotificationResponse | null) => {
       const data = response?.notification.request.content.data as Record<string, unknown> | undefined;
       routineService.handleNotificationResponse(data, response).then(({ ran, outcome }) => {
         if (ran && outcome) {
@@ -105,8 +106,8 @@ export default function RootLayout() {
       });
     };
 
-    Notifications.getLastNotificationResponseAsync().then(runFromResponse);
-    const subscription = Notifications.addNotificationResponseReceivedListener(runFromResponse);
+    notifications.getLastNotificationResponseAsync().then(runFromResponse);
+    const subscription = notifications.addNotificationResponseReceivedListener(runFromResponse);
     return () => subscription.remove();
   }, []);
 
