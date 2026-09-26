@@ -1,5 +1,5 @@
 import React from 'react';
-import { render } from '@testing-library/react-native';
+import { render, cleanup } from '@testing-library/react-native';
 import { GideonAvatar } from '../src/components/GideonAvatar';
 import {
   browFurrowFor,
@@ -24,6 +24,13 @@ const STATUSES: AssistantStatus[] = [
 const serialize = (node: unknown): string => JSON.stringify(node);
 
 const draw = (ui: React.ReactElement) => serialize(render(ui).toJSON());
+
+// Expression channels use the JS driver because SVG geometry cannot use the
+// native Animated driver. Freeze their timers in structural render tests;
+// animation timing itself is covered by the pure expression tests below.
+beforeAll(() => jest.useFakeTimers());
+afterEach(() => cleanup());
+afterAll(() => jest.useRealTimers());
 
 describe('GideonAvatar', () => {
   it('renders every status at both the head and the chip size', () => {

@@ -1,3 +1,4 @@
+import { fetchWithTimeout } from './network';
 /**
  *
  * Onboarding used to accept any string and thank you for it: a typo only
@@ -19,7 +20,7 @@ export const verifyGeminiKey = async (apiKey: string): Promise<KeyCheck> => {
   if (key.length < 20) return { ok: false, message: 'Key looks too short' };
 
   try {
-    const response = await fetch(
+    const response = await fetchWithTimeout(
       `https://generativelanguage.googleapis.com/v1beta/models?key=${encodeURIComponent(key)}`
     );
     if (response.ok) {

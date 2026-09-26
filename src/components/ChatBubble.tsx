@@ -33,6 +33,8 @@ import {
   Camera,
   Clock,
   Brain,
+  CloudSun,
+  Newspaper,
 } from 'lucide-react-native';
 
 interface ChatBubbleProps {
@@ -58,6 +60,12 @@ export const ChatBubble: React.FC<ChatBubbleProps> = ({ message, onAction }) => 
   const isPendingAssistant = !isUser && !isSystem && !hasPlainContent && !message.imageUri;
 
   const timeStr = formatClockTime(new Date(message.timestamp), language);
+  const liveInfo = message.toolCall?.name === 'live_info'
+    ? message.toolCall.result as {
+        weather?: { tempC: number; condition: string; humidity: number; windKmh: number; location: string } | null;
+        news?: { title: string; source: string; link?: string }[];
+      }
+    : null;
 
   const handleCopy = async () => {
     try {
@@ -209,6 +217,7 @@ export const ChatBubble: React.FC<ChatBubbleProps> = ({ message, onAction }) => 
               {message.toolCall.name === 'vision' && <Camera size={14} color="#00E5FF" />}
               {message.toolCall.name === 'routine' && <Clock size={14} color="#FBBF24" />}
               {message.toolCall.name === 'memory' && <Brain size={14} color="#00E5FF" />}
+              {message.toolCall.name === 'live_info' && <CloudSun size={14} color="#38BDF8" />}
 
               <Text style={styles.toolTitle}>
                 {message.toolCall.name === 'dave_build' && 'DAVE AGENT // WEB SYNTHESIS'}
@@ -220,6 +229,7 @@ export const ChatBubble: React.FC<ChatBubbleProps> = ({ message, onAction }) => 
                 {message.toolCall.name === 'vision' && 'SEVEN VISION // MULTIMODAL OCULAR'}
                 {message.toolCall.name === 'routine' && 'AUTOMATION ENGINE // ROUTINE'}
                 {message.toolCall.name === 'memory' && 'NEURAL RAG // LONG-TERM MEMORY'}
+                {message.toolCall.name === 'live_info' && 'GLOBAL INTELLIGENCE // LIVE UPDATE'}
               </Text>
 
               <View
@@ -238,6 +248,34 @@ export const ChatBubble: React.FC<ChatBubbleProps> = ({ message, onAction }) => 
 
             {message.toolCall.summary && (
               <Text style={styles.toolSummary}>{message.toolCall.summary}</Text>
+            )}
+
+            {liveInfo && (
+              <View style={styles.liveIntelCard}>
+                {liveInfo.weather && (
+                  <View style={styles.liveWeatherRow}>
+                    <View>
+                      <Text style={styles.liveWeatherTemp}>{liveInfo.weather.tempC}°C</Text>
+                      <Text style={styles.liveWeatherLocation}>{liveInfo.weather.location.toUpperCase()}</Text>
+                    </View>
+                    <View style={styles.liveWeatherDetails}>
+                      <Text style={styles.liveWeatherCondition}>{liveInfo.weather.condition}</Text>
+                      <Text style={styles.liveWeatherMeta}>H {liveInfo.weather.humidity}%  ·  W {liveInfo.weather.windKmh} KM/H</Text>
+                    </View>
+                  </View>
+                )}
+                {!!liveInfo.news?.length && (
+                  <View style={styles.liveNewsBlock}>
+                    <View style={styles.liveNewsHeader}><Newspaper size={11} color="#FBBF24" /><Text style={styles.liveNewsHeaderText}>LIVE HEADLINES</Text></View>
+                    {liveInfo.news.slice(0, 4).map((item, index) => (
+                      <TouchableOpacity key={`${item.source}-${item.title}`} style={styles.liveNewsRow} onPress={() => item.link && onAction?.('open_source', { url: item.link })}>
+                        <Text style={styles.liveNewsIndex}>{String(index + 1).padStart(2, '0')}</Text>
+                        <View style={styles.liveNewsCopy}><Text style={styles.liveNewsTitle} numberOfLines={2}>{item.title}</Text><Text style={styles.liveNewsSource}>{item.source.toUpperCase()}</Text></View>
+                      </TouchableOpacity>
+                    ))}
+                  </View>
+                )}
+              </View>
             )}
 
             {/* Interactive Actions */}
@@ -500,6 +538,21 @@ const styles = StyleSheet.create({
     lineHeight: 17,
     marginBottom: 8,
   },
+  liveIntelCard: { borderWidth: 1, borderColor: 'rgba(56,189,248,.35)', borderRadius: 7, backgroundColor: 'rgba(2,12,24,.82)', padding: 9, marginBottom: 9 },
+  liveWeatherRow: { flexDirection: 'row', alignItems: 'center', justifyContent: 'space-between', paddingBottom: 8, borderBottomWidth: 1, borderBottomColor: 'rgba(56,189,248,.18)' },
+  liveWeatherTemp: { color: '#FFF', fontFamily: FONT.display, fontSize: 25 },
+  liveWeatherLocation: { color: '#38BDF8', fontFamily: FONT.mono, fontSize: 7 },
+  liveWeatherDetails: { alignItems: 'flex-end' },
+  liveWeatherCondition: { color: '#FFF8E1', fontFamily: FONT.uiMedium, fontSize: 10, fontWeight: '800' },
+  liveWeatherMeta: { color: 'rgba(255,255,255,.55)', fontFamily: FONT.mono, fontSize: 7, marginTop: 3 },
+  liveNewsBlock: { paddingTop: 8 },
+  liveNewsHeader: { flexDirection: 'row', alignItems: 'center', gap: 5, marginBottom: 6 },
+  liveNewsHeaderText: { color: '#FBBF24', fontFamily: FONT.mono, fontSize: 7, fontWeight: '900', letterSpacing: 1 },
+  liveNewsRow: { flexDirection: 'row', gap: 7, marginBottom: 6 },
+  liveNewsIndex: { color: '#FBBF24', fontFamily: FONT.mono, fontSize: 7.5, fontWeight: '900' },
+  liveNewsCopy: { flex: 1 },
+  liveNewsTitle: { color: '#FFF', fontFamily: FONT.uiMedium, fontSize: 9.5, lineHeight: 13 },
+  liveNewsSource: { color: 'rgba(255,255,255,.45)', fontFamily: FONT.mono, fontSize: 6.5, marginTop: 1 },
   toolActions: {
     flexDirection: 'row',
     flexWrap: 'wrap',

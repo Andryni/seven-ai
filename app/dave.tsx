@@ -6,6 +6,7 @@ import {
   TextInput,
   TouchableOpacity,
   ScrollView,
+  Linking,
 } from 'react-native';
 import { useRouter } from 'expo-router';
 import { useSevenStore } from '../src/store/useSevenStore';
@@ -21,6 +22,7 @@ import { CodeEditorModal } from '../src/components/CodeEditorModal';
 import { ProjectManagerModal } from '../src/components/ProjectManagerModal';
 import { daveAgent } from '../src/core/daveAgent';
 import { selfHealing } from '../src/core/selfHealing';
+import { githubProjectService } from '../src/services/githubProjectService';
 import { soundFx } from '../src/services/soundFxService';
 import { haptics } from '../src/services/hapticsService';
 import { useTheme, useThemeStyles } from '../src/theme/theme';
@@ -35,6 +37,10 @@ import {
   ShieldAlert,
   Edit3,
   Wand2,
+  GitCompare,
+  TestTube2,
+  History,
+  GitPullRequest,
 } from 'lucide-react-native';
 
 const PRESET_PROMPTS = [
@@ -64,6 +70,7 @@ export default function DaveAgentScreen() {
   const [showSelfHealingModal, setShowSelfHealingModal] = useState(false);
   const [showCodeEditor, setShowCodeEditor] = useState(false);
   const [showTemplateHub, setShowTemplateHub] = useState(false);
+  const [isPublishing, setIsPublishing] = useState(false);
 
   const currentProject = activeDaveProject || (daveProjects.length > 0 ? daveProjects[0] : null);
 
@@ -122,16 +129,38 @@ export default function DaveAgentScreen() {
     await selfHealing.simulateBugAndAutoFix();
   };
 
-  const handleSaveCode = (updatedFiles: { 'index.html': string; 'style.css': string; 'script.js': string }) => {
+  const handleSaveCode = async (updatedFiles: { 'index.html': string; 'style.css': string; 'script.js': string }) => {
     if (currentProject) {
-      const updated = {
-        ...currentProject,
-        files: updatedFiles,
-        previewHtml: updatedFiles['index.html'],
-      };
+      const updated = await daveAgent.saveProjectFiles(currentProject, updatedFiles);
       addDaveProject(updated);
       setActiveDaveProject(updated);
-      addTerminalLog(`HOT-RELOAD: Updated ${currentProject.name} source code live.`, 'success');
+      addTerminalLog(`HOT-RELOAD: Versioned ${currentProject.name} source code live.`, 'success');
+    }
+  };
+
+  const handlePublishPullRequest = async () => {
+    if (!currentProject || isPublishing) return;
+    setIsPublishing(true);
+    try {
+      const result = await githubProjectService.publishPullRequest(currentProject);
+      addTerminalLog(`GITHUB PR: ${result.branch} → ${result.url}`, 'success');
+      await Linking.openURL(result.url);
+    } catch (error: any) {
+      addTerminalLog(`GITHUB PUBLISH FAILED: ${error?.message || error}`, 'error');
+    } finally {
+      setIsPublishing(false);
+    }
+  };
+
+  const handleRestorePrevious = async () => {
+    const previous = currentProject?.versions?.[1];
+    if (!currentProject || !previous) return;
+    try {
+      const restored = await daveAgent.restoreVersion(currentProject, previous.id);
+      setActiveDaveProject(restored);
+      haptics.success();
+    } catch (error: any) {
+      addTerminalLog(`RESTORE FAILED: ${error?.message || error}`, 'error');
     }
   };
 
@@ -275,6 +304,59 @@ export default function DaveAgentScreen() {
         <ScreenReveal index={2}>
           <TerminalLog maxHeight={150} title="SEVEN_OS // DAVE_AGENT.SYNTHESIZER" />
         </ScreenReveal>
+
+        {currentProject && (
+          <ScreenReveal index={3}>
+            <View style={styles.engineeringPanel}>
+              <View style={styles.engineeringHeader}>
+                <View style={styles.previewTitleLeft}>
+                  <History size={14} color={palette.info} />
+                  <Text style={styles.engineeringTitle}>ENGINEERING CONTROL</Text>
+                </View>
+                <Text style={styles.versionCount}>{currentProject.versions?.length || 0} VERSIONS</Text>
+              </View>
+              <View style={styles.engineeringActions}>
+                <TouchableOpacity style={styles.engineeringBtn} onPress={() => daveAgent.runProjectTests(currentProject)}>
+                  <TestTube2 size={13} color={palette.success} />
+                  <Text style={styles.engineeringBtnText}>RUN TESTS</Text>
+                </TouchableOpacity>
+                <TouchableOpacity style={[styles.engineeringBtn, isPublishing && styles.btnLoading]} disabled={isPublishing} onPress={handlePublishPullRequest}>
+                  <GitPullRequest size={13} color={palette.info} />
+                  <Text style={styles.engineeringBtnText}>{isPublishing ? 'PUBLISHING' : 'OPEN PR'}</Text>
+                </TouchableOpacity>
+                <TouchableOpacity
+                  style={[styles.engineeringBtn, !currentProject.versions?.[1] && styles.btnLoading]}
+                  disabled={!currentProject.versions?.[1]}
+                  onPress={handleRestorePrevious}
+                >
+                  <History size={13} color={palette.warning} />
+                  <Text style={styles.engineeringBtnText}>ROLLBACK</Text>
+                </TouchableOpacity>
+              </View>
+              {currentProject.lastTestReport && (
+                <View style={styles.testReport}>
+                  <Text style={styles.testScore}>{currentProject.lastTestReport.passed} PASS / {currentProject.lastTestReport.failed} FAIL</Text>
+                  {currentProject.lastTestReport.checks.map((check) => (
+                    <Text key={check.name} style={[styles.testLine, !check.ok && styles.testFailed]}>
+                      {check.ok ? '✓' : '×'} {check.name} — {check.detail}
+                    </Text>
+                  ))}
+                </View>
+              )}
+              {(currentProject.versions?.length || 0) > 1 && (
+                <View style={styles.diffPanel}>
+                  <View style={styles.previewTitleLeft}>
+                    <GitCompare size={12} color={palette.accent} />
+                    <Text style={styles.diffTitle}>LATEST DIFF</Text>
+                  </View>
+                  {daveAgent.diffVersions(currentProject, currentProject.versions![1].id, currentProject.versions![0].id).map((diff) => (
+                    <Text key={diff.file} style={styles.diffLine}>{diff.file}  <Text style={styles.diffAdded}>+{diff.added}</Text>  <Text style={styles.diffRemoved}>−{diff.removed}</Text></Text>
+                  ))}
+                </View>
+              )}
+            </View>
+          </ScreenReveal>
+        )}
 
         {/* Live WebView Preview + Code Inspector */}
         {currentProject && (
@@ -529,6 +611,22 @@ const daveStyles = (t: Palette) =>
       color: t.textDim,
       fontSize: 9.5,
     },
+    engineeringPanel: { marginTop: 10, backgroundColor: t.bgElevated, borderWidth: 1, borderColor: t.borderStrong, borderRadius: 8, padding: 11 },
+    engineeringHeader: { flexDirection: 'row', justifyContent: 'space-between', alignItems: 'center', marginBottom: 9 },
+    engineeringTitle: { color: t.info, fontFamily: FONT.monoBold, fontSize: 10, letterSpacing: 1 },
+    versionCount: { color: t.textFaint, fontFamily: FONT.mono, fontSize: 8 },
+    engineeringActions: { flexDirection: 'row', gap: 7 },
+    engineeringBtn: { flex: 1, minHeight: 38, flexDirection: 'row', justifyContent: 'center', alignItems: 'center', gap: 5, borderWidth: 1, borderColor: t.borderStrong, backgroundColor: t.bgDeep, borderRadius: 5 },
+    engineeringBtnText: { color: t.text, fontFamily: FONT.monoBold, fontSize: 8 },
+    testReport: { marginTop: 9, borderTopWidth: 1, borderTopColor: t.border, paddingTop: 7 },
+    testScore: { color: t.success, fontFamily: FONT.monoBold, fontSize: 9, marginBottom: 5 },
+    testLine: { color: t.textDim, fontFamily: FONT.mono, fontSize: 8, lineHeight: 14 },
+    testFailed: { color: t.error },
+    diffPanel: { marginTop: 9, borderTopWidth: 1, borderTopColor: t.border, paddingTop: 7 },
+    diffTitle: { color: t.accent, fontFamily: FONT.monoBold, fontSize: 8 },
+    diffLine: { color: t.textDim, fontFamily: FONT.mono, fontSize: 8, marginTop: 5 },
+    diffAdded: { color: t.success },
+    diffRemoved: { color: t.error },
     previewSection: {
       marginTop: 10,
     },

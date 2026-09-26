@@ -9,6 +9,8 @@ import {
 } from 'expo-audio';
 import { useSevenStore } from '../store/useSevenStore';
 import { fishAudioService, fishVoiceFor } from '../services/fishAudioService';
+import { transcribeSpeechRecording } from '../services/speechTranscriptionService';
+import * as FileSystem from 'expo-file-system/legacy';
 
 /**
  * Native speech recognition is optional, and in expo-speech-recognition v57 its
@@ -65,6 +67,12 @@ interface LiveSession {
 /** One microphone session for the whole app, with a single named owner. */
 let liveSession: LiveSession | null = null;
 
+/** One speech turn for the whole app. Several screens can mount useVoice at
+ * once; without global ownership each hook could start its own TTS engine. */
+let activeSpeechTurn = 0;
+let activeSpeechOwner: symbol | null = null;
+let resetActiveSpeechUi: (() => void) | null = null;
+
 /**
  * True while *any* screen holds the microphone.
  *
@@ -119,14 +127,6 @@ const resolveRecognitionLanguage = (
   return uiLanguage === 'fr' ? 'fr-FR' : 'en-US';
 };
 
-const DEMO_COMMANDS = [
-  'make a good developer portfolio website',
-  'organize downloads',
-  'research on AI and create a PDF',
-  'what was the last patch?',
-  'check unread emails',
-];
-
 /** Recorder dB (-60..0) and recogniser volume (-2..10) both land in 0..1. */
 const clamp01 = (value: number): number => Math.min(1, Math.max(0.05, value));
 
@@ -151,12 +151,16 @@ export const useVoice = () => {
   // cleared the moment speech stops — never before, or the mouth moves in
   // silence while the voice is still being synthesized.
   const [spokenText, setSpokenText] = useState('');
-  const [voiceMode, setVoiceMode] = useState<'real' | 'demo'>(
-    SPEECH_MODULE ? 'real' : 'demo'
-  );
+  const [speechPositionMs, setSpeechPositionMs] = useState<number | undefined>();
+  const [speechDurationMs, setSpeechDurationMs] = useState<number | undefined>();
+  // Both native recognition and the Expo Go cloud-transcription fallback use
+  // the user's real microphone. `demo` is retained only for a genuine startup
+  // failure so older UI call sites remain compatible.
+  const [voiceMode, setVoiceMode] = useState<'real' | 'demo'>('real');
 
   const waveIntervalRef = useRef<ReturnType<typeof setInterval> | null>(null);
-  const demoTimeoutRef = useRef<ReturnType<typeof setTimeout> | null>(null);
+  const captureTimeoutRef = useRef<ReturnType<typeof setTimeout> | null>(null);
+  const finishCloudCaptureRef = useRef<(() => void) | null>(null);
   const listenersRef = useRef<{ remove: () => void }[]>([]);
   const mountedRef = useRef(true);
   /** Stable identity for this hook instance, used as the microphone owner. */
@@ -200,10 +204,11 @@ export const useVoice = () => {
         clearInterval(waveIntervalRef.current);
         waveIntervalRef.current = null;
       }
-      if (demoTimeoutRef.current) {
-        clearTimeout(demoTimeoutRef.current);
-        demoTimeoutRef.current = null;
+      if (captureTimeoutRef.current) {
+        clearTimeout(captureTimeoutRef.current);
+        captureTimeoutRef.current = null;
       }
+      finishCloudCaptureRef.current = null;
       listenersRef.current.forEach((sub) => {
         try {
           sub.remove();
@@ -216,6 +221,15 @@ export const useVoice = () => {
         try {
           void rec.stop();
         } catch {}
+      }
+      // A screen may disappear while its neural request is still in flight.
+      // Invalidate it now so it cannot begin talking over the next screen.
+      if (activeSpeechOwner === owner) {
+        activeSpeechTurn += 1;
+        activeSpeechOwner = null;
+        resetActiveSpeechUi = null;
+        void fishAudioService.stopAudio();
+        void Speech.stop();
       }
     };
     // eslint-disable-next-line react-hooks/exhaustive-deps
@@ -240,7 +254,7 @@ export const useVoice = () => {
   }, [setAudioAmplitude]);
 
   /** Real metering from the recorder — demo path only (no recogniser running). */
-  const startRecorderAmplitude = useCallback(async (): Promise<boolean> => {
+  const startRecorderAmplitude = useCallback(async (onSpeechEnded?: () => void): Promise<boolean> => {
     if (Platform.OS === 'web') return false;
     try {
       const perm = await requestRecordingPermissionsAsync();
@@ -253,12 +267,29 @@ export const useVoice = () => {
       await recorder.prepareToRecordAsync();
       recorder.record();
 
+      let heardSpeech = false;
+      let silentSince = 0;
+      let endpointDelivered = false;
       if (waveIntervalRef.current) clearInterval(waveIntervalRef.current);
       waveIntervalRef.current = setInterval(() => {
         try {
           const status = recorder.getStatus();
           const metering = typeof status?.metering === 'number' ? status.metering : -60;
           setAudioAmplitude(clamp01((metering + 60) / 60));
+          // Lightweight VAD for the Expo Go/cloud path. Wait until actual voice
+          // energy has been observed, then submit after sustained silence.
+          if (metering > -42) {
+            heardSpeech = true;
+            silentSince = 0;
+          } else if (heardSpeech && metering < -48) {
+            if (!silentSince) silentSince = Date.now();
+            if (!endpointDelivered && Date.now() - silentSince >= 1300) {
+              endpointDelivered = true;
+              onSpeechEnded?.();
+            }
+          } else {
+            silentSince = 0;
+          }
         } catch {
           // Recorder released mid-poll.
         }
@@ -289,6 +320,31 @@ export const useVoice = () => {
         return;
       }
 
+      // Reset the visual state owned by another mounted useVoice instance
+      // (for example the dashboard underneath a briefing modal).
+      resetActiveSpeechUi?.();
+      const resetLocalUi = () => {
+        if (!mountedRef.current) return;
+        setIsSpeaking(false);
+        setIsAudible(false);
+        setSpokenText('');
+        setSpeechPositionMs(undefined);
+        setSpeechDurationMs(undefined);
+        stopAmplitudeAnimation();
+      };
+
+      const turn = ++activeSpeechTurn;
+      activeSpeechOwner = ownerRef.current;
+      resetActiveSpeechUi = resetLocalUi;
+      const isCurrentTurn = () =>
+        turn === activeSpeechTurn && activeSpeechOwner === ownerRef.current;
+
+      // Cancel every backend, not only the backend selected by this hook.
+      // This matters when navigation leaves a Fish voice alive and the next
+      // screen uses the system or ElevenLabs voice.
+      await Promise.allSettled([fishAudioService.stopAudio(), Speech.stop()]);
+      if (!isCurrentTurn()) return;
+
       // A transcription that cannot be recognized should never leave the mouth
       // open: anything below is either set on real playback start or cleared.
       /**
@@ -297,21 +353,26 @@ export const useVoice = () => {
        * that merely *asks* for audio.
        */
       const beginAudible = (cleanText: string) => {
+        if (!isCurrentTurn()) return;
+        setSpeechPositionMs(0);
+        setSpeechDurationMs(undefined);
         setIsAudible(true);
         setSpokenText(cleanText);
         startSyntheticAmplitude();
       };
 
       const finish = () => {
-        setIsSpeaking(false);
-        setIsAudible(false);
-        setSpokenText('');
-        stopAmplitudeAnimation();
+        if (!isCurrentTurn()) return;
+        activeSpeechOwner = null;
+        resetActiveSpeechUi = null;
+        resetLocalUi();
         setStatus('idle');
       };
 
       const speakWithSystem = (cleanText: string, language: string, done?: () => void) => {
+        if (!isCurrentTurn()) return;
         const completed = () => {
+          if (!isCurrentTurn()) return;
           finish();
           done?.();
         };
@@ -363,8 +424,10 @@ export const useVoice = () => {
               language: targetLanguage,
               rate: config.voiceRate || 1,
               onSystemFallback: (rest) => {
-                // Fish died mid-turn: the unspoken remainder goes to the
-                // system voice, so the answer is still heard in full.
+                if (!isCurrentTurn()) return;
+                // Fish died mid-turn: only the unspoken remainder changes
+                // engine. The stream reports the turn as handled, preventing a
+                // second full-text fallback from starting at the same time.
                 console.warn('Fish Audio failed mid-turn, system voice takes over');
                 speakWithSystem(rest, targetLanguage, onDone);
               },
@@ -372,17 +435,18 @@ export const useVoice = () => {
             {
               onStart: () => beginAudible(cleanText),
               onDone: () => {
+                if (!isCurrentTurn()) return;
                 finish();
                 onDone?.();
               },
               onError: () => {
-                // Silence would be worse than a robotic voice: nothing played
-                // at all, so the whole text goes to the system voice.
+                // The single fallback below owns recovery. Starting it here as
+                // well produced two concurrent system utterances.
                 console.warn('Fish Audio failed, falling back to the system voice');
-                speakWithSystem(cleanText, targetLanguage, onDone);
               },
             }
           );
+          if (!isCurrentTurn()) return;
           if (played) return;
         }
 
@@ -399,23 +463,31 @@ export const useVoice = () => {
             },
             {
               onStart: () => beginAudible(cleanText),
+              onProgress: (positionMs: number, durationMs?: number) => {
+                if (!isCurrentTurn()) return;
+                setSpeechPositionMs(positionMs);
+                if (durationMs) setSpeechDurationMs(durationMs);
+              },
               onDone: () => {
+                if (!isCurrentTurn()) return;
                 finish();
                 onDone?.();
               },
               onError: () => {
+                // Recovery is centralized after `speak` returns false.
                 console.warn('ElevenLabs failed, falling back to the system voice');
-                speakWithSystem(cleanText, targetLanguage, onDone);
               },
             }
           );
+          if (!isCurrentTurn()) return;
           if (played) return;
         }
 
         // Engine 3 — the system voice, always available.
         await Speech.stop();
-        speakWithSystem(cleanText, targetLanguage, onDone);
+        if (isCurrentTurn()) speakWithSystem(cleanText, targetLanguage, onDone);
       } catch (e) {
+        if (!isCurrentTurn()) return;
         console.warn('Speech error:', e);
         finish();
         onDone?.();
@@ -436,11 +508,14 @@ export const useVoice = () => {
       config.elevenLabsVoiceId,
       setStatus,
       stopAmplitudeAnimation,
-      startSyntheticAmplitude,
     ]
   );
 
   const stopSpeaking = useCallback(async () => {
+    activeSpeechTurn += 1;
+    activeSpeechOwner = null;
+    resetActiveSpeechUi?.();
+    resetActiveSpeechUi = null;
     try {
       try {
         await fishAudioService.stopAudio();
@@ -478,9 +553,9 @@ export const useVoice = () => {
       } catch {}
     });
     listenersRef.current = [];
-    if (demoTimeoutRef.current) {
-      clearTimeout(demoTimeoutRef.current);
-      demoTimeoutRef.current = null;
+    if (captureTimeoutRef.current) {
+      clearTimeout(captureTimeoutRef.current);
+      captureTimeoutRef.current = null;
     }
     stopAmplitudeAnimation();
   }, [stopAmplitudeAnimation]);
@@ -588,10 +663,8 @@ export const useVoice = () => {
         if (settled) return;
         settled = true;
         wantActiveRef.current = false;
-        // Readable proof that speech reached the app — the same idea as the
-        // `[ota]` line: without it, "the microphone did not understand me" can
-        // only be investigated with a cable attached.
-        console.log(`[stt] ${priority} recognised: ${transcript.slice(0, 90)}`);
+        // Never print recognized speech: logcat may be collected in support
+        // reports and voice transcripts can contain private information.
         // Keep the last recognized words on screen: they are what the user
         // just said, and clearing them here would blank the transcript the
         // moment it becomes useful.
@@ -838,21 +911,77 @@ export const useVoice = () => {
     ]
   );
 
-  // Demo fallback (surfaced in the UI via voiceMode === 'demo'): a short capture
-  // with a real waveform, then a sample command so the flow stays explorable.
-  const runDemo = useCallback(
-    (onRecognized?: (transcript: string) => void) => {
-      if (demoTimeoutRef.current) clearTimeout(demoTimeoutRef.current);
-      demoTimeoutRef.current = setTimeout(() => {
-        demoTimeoutRef.current = null;
-        if (!mountedRef.current) return;
-        setIsRecording(false);
-        stopAmplitudeAnimation();
-        setStatus('idle');
-        onRecognized?.(DEMO_COMMANDS[Math.floor(Math.random() * DEMO_COMMANDS.length)]);
-      }, 2500);
+  // Expo Go cannot load the optional native recognizer. Record the user's
+  // actual microphone audio and transcribe it with their configured Gemini key
+  // instead of inventing one of a handful of sample commands.
+  const runCloudCapture = useCallback(
+    (
+      owner: symbol,
+      onRecognized?: (transcript: string) => void,
+      onClosed?: () => void
+    ) => {
+      let finishing = false;
+      const finish = () => {
+        if (finishing) return;
+        finishing = true;
+        wantActiveRef.current = false;
+        finishCloudCaptureRef.current = null;
+        if (captureTimeoutRef.current) {
+          clearTimeout(captureTimeoutRef.current);
+          captureTimeoutRef.current = null;
+        }
+
+        void (async () => {
+          const rec = recorderRef.current;
+          let uri: string | null = null;
+          try {
+            if (rec) {
+              await rec.stop();
+              uri = rec.uri;
+            }
+          } catch {
+            // A recorder stopped by the OS has no usable file.
+          }
+
+          if (liveSession?.owner === owner) liveSession = null;
+          stopAmplitudeAnimation();
+          if (mountedRef.current) {
+            setIsRecording(false);
+            setStatus(uri ? 'thinking' : 'idle');
+          }
+
+          let transcript = '';
+          try {
+            if (uri && config.geminiApiKey?.trim()) {
+              transcript = await transcribeSpeechRecording(
+                uri,
+                config.geminiApiKey,
+                resolveRecognitionLanguage(config.voiceLanguage, config.language)
+              );
+            }
+          } catch (error) {
+            console.warn('Cloud speech transcription failed:', error);
+          } finally {
+            if (uri) FileSystem.deleteAsync(uri, { idempotent: true }).catch(() => {});
+          }
+
+          if (!mountedRef.current) return;
+          setStatus('idle');
+          if (transcript) {
+            setPartialTranscript(transcript);
+            onRecognized?.(transcript);
+          } else {
+            onClosed?.();
+          }
+        })();
+      };
+
+      finishCloudCaptureRef.current = finish;
+      // Enough time for a natural command; pressing the mic again submits
+      // sooner. A hard bound prevents an abandoned capture from staying open.
+      captureTimeoutRef.current = setTimeout(finish, 8000);
     },
-    [setStatus, stopAmplitudeAnimation]
+    [config.geminiApiKey, config.language, config.voiceLanguage, setStatus, stopAmplitudeAnimation]
   );
 
   /**
@@ -888,7 +1017,7 @@ export const useVoice = () => {
       setPartialTranscript('');
       setStatus('listening');
 
-      if (SPEECH_MODULE) {
+      if (SPEECH_MODULE && SPEECH_MODULE.isRecognitionAvailable?.() !== false) {
         setVoiceMode('real');
         const started = startNativeCapture(
           (transcript) => onRecognized?.(transcript),
@@ -900,43 +1029,65 @@ export const useVoice = () => {
         );
         if (!started) {
           setVoiceMode('demo');
-          runDemo(onRecognized);
+          options?.onClosed?.();
         }
         return true;
       }
 
-      setVoiceMode('demo');
+      // Cloud fallback is intentionally foreground-only: using it for the
+      // always-on wake-word radar would upload recurring silence recordings.
+      if (priority === 'background' || !config.geminiApiKey?.trim()) {
+        wantActiveRef.current = false;
+        setIsRecording(false);
+        setStatus('idle');
+        options?.onClosed?.();
+        return false;
+      }
+
+      setVoiceMode('real');
       liveSession = {
         owner,
         priority,
         stop: () => {
-          releaseRecorder();
-          if (liveSession?.owner === owner) liveSession = null;
+          finishCloudCaptureRef.current?.();
         },
       };
-      void startRecorderAmplitude().then((micOk) => {
-        if (!micOk && mountedRef.current) startSyntheticAmplitude();
+      void startRecorderAmplitude(() => finishCloudCaptureRef.current?.()).then((micOk) => {
+        if (!wantActiveRef.current || liveSession?.owner !== owner) return;
+        if (!micOk) {
+          liveSession = null;
+          setIsRecording(false);
+          setStatus('idle');
+          options?.onClosed?.();
+          return;
+        }
+        runCloudCapture(owner, onRecognized, options?.onClosed);
       });
-      runDemo(onRecognized);
       return true;
     },
     [
-      runDemo,
+      runCloudCapture,
       startNativeCapture,
       startRecorderAmplitude,
-      startSyntheticAmplitude,
-      releaseRecorder,
+      config.geminiApiKey,
       setStatus,
     ]
   );
 
   const stopListening = useCallback(() => {
     wantActiveRef.current = false;
+    // In the Expo Go/cloud path, a second press means “finish and
+    // transcribe”, not “throw the recording away”.
+    if (finishCloudCaptureRef.current) {
+      finishCloudCaptureRef.current();
+      return;
+    }
+
     setIsRecording(false);
     setPartialTranscript('');
-    if (demoTimeoutRef.current) {
-      clearTimeout(demoTimeoutRef.current);
-      demoTimeoutRef.current = null;
+    if (captureTimeoutRef.current) {
+      clearTimeout(captureTimeoutRef.current);
+      captureTimeoutRef.current = null;
     }
 
     const ownerHold = liveSession?.owner === ownerRef.current;
@@ -962,6 +1113,9 @@ export const useVoice = () => {
     isAudible,
     /** Text currently being spoken ('' when silent) — drives the visemes. */
     spokenText,
+    /** Real neural-audio playback clock when exposed by the engine. */
+    speechPositionMs,
+    speechDurationMs,
     speak,
     stopSpeaking,
     startListening,

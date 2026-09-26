@@ -6,6 +6,7 @@ import { selfHealing } from '../core/selfHealing';
 import { storageService } from './storageService';
 import { resolveModel } from '../core/geminiClient';
 import { Platform } from 'react-native';
+import { webSearchService } from './webSearchService';
 
 class ResearchService {
   private static instance: ResearchService;
@@ -41,20 +42,49 @@ class ResearchService {
     store.addTerminalLog(`Research task has been initiated for: "${topic}"`, 'cmd');
     store.addTerminalLog('Querying deep intelligence synthesis matrix...', 'info');
 
-    let title = `Executive Synthesis: ${topic.toUpperCase()}`;
-    let summary = `Strategic and technical intelligence assessment regarding ${topic}, compiled for ${userName}.`;
+    const isFr = store.config.language === 'fr';
+    let title = isFr ? `Synthèse documentée : ${topic}` : `Sourced synthesis: ${topic}`;
+    let summary = isFr
+      ? `Synthèse de sources publiques concernant ${topic}, préparée pour ${userName}.`
+      : `Synthesis of public sources about ${topic}, prepared for ${userName}.`;
     let sections: { heading: string; body: string }[] = [];
 
-    // Attempt Gemini deep research
+    // Ground the report before asking a language model to synthesize it. A
+    // generated answer without retrieved evidence is a draft, not research.
+    const search = await webSearchService
+      .searchWeb(topic, isFr ? 'fr' : 'en')
+      .catch(() => ({ query: topic, results: [], summary: '' }));
+    const sources = search.results.slice(0, 6).map((source) => ({
+      title: source.title,
+      url: source.url,
+      snippet: source.snippet,
+    }));
+    store.addTerminalLog(
+      sources.length
+        ? `GROUNDING: ${sources.length} verifiable source(s) retrieved.`
+        : 'GROUNDING UNAVAILABLE: report will be labelled as an unverified draft.',
+      sources.length ? 'success' : 'warn'
+    );
+
+    // Attempt Gemini synthesis using only the evidence above.
+
     let generatedViaAi = false;
-    if (apiKey && apiKey.trim().length > 5) {
+    if (sources.length > 0 && apiKey && apiKey.trim().length > 5) {
       try {
         store.addTerminalLog('Synthesizing structured multi-section document...', 'cmd');
         const { model } = await resolveModel(apiKey, {
           generationConfig: { responseMimeType: 'application/json' },
         });
 
-        const prompt = `You are Seven AI Research Engine. Conduct an in-depth, executive-grade intelligence research report on: "${topic}".
+        const evidence = sources.length
+          ? sources.map((s, i) => `[${i + 1}] ${s.title}\n${s.snippet || ''}\n${s.url}`).join('\n\n')
+          : 'NO VERIFIED SOURCES WERE RETRIEVED.';
+        const prompt = `You are Seven AI Research Engine. Write a careful report on: "${topic}".
+Use ONLY the evidence below for factual claims. Cite sources inline as [1], [2], etc. Never invent statistics, dates, benchmarks, or citations. If evidence is missing, explicitly say that the point could not be verified. Write in ${isFr ? 'French' : 'English'}.
+
+EVIDENCE:
+${evidence}
+
 Output MUST be a JSON object with this exact structure:
 {
   "title": "Clear comprehensive report title",
@@ -83,24 +113,27 @@ Output MUST be a JSON object with this exact structure:
     }
 
     if (!generatedViaAi) {
-      sections = [
-        {
-          heading: '1. Foundational Architecture & Autonomous Paradigms',
-          body: `The paradigm shift in ${topic} centers on multi-modal autonomy, deterministic execution bands, and real-time self-healing AST compilers. Distributed edge models now execute sub-50ms inference while coordinating complex filesystem and network orchestration tasks without human intervention.`,
-        },
-        {
-          heading: '2. State of the Art Benchmarks & Empirical Findings',
-          body: `Empirical evaluations in 2026 demonstrate that hybrid agent architectures achieve a 94.8% task completion rate on complex developer workflows. Zero-shot hot-patching algorithms reduce system downtime by 99.2% when paired with automated CLR AST synthesizer routines.`,
-        },
-        {
-          heading: '3. Strategic Vectors & Zero-Trust Security',
-          body: `Implementation of scoped SAF (Storage Access Framework) virtualization and OAuth2 zero-trust tokens ensures that autonomous agents operate within verified sandbox boundaries while maintaining seamless inter-application productivity.`,
-        },
-        {
-          heading: '4. Future Horizon & Trajectory (2026-2028)',
-          body: `The integration of on-device neural shaders and autonomous web synthesis agents (such as Dave Engine) indicates a complete transition toward ambient spatial AI, where personal assistants synthesize custom software on-the-fly to solve immediate user intent.`,
-        },
-      ];
+      if (sources.length) {
+        summary = isFr
+          ? `Le modèle de synthèse n’était pas disponible. Ce document présente les extraits récupérés sans ajouter d’affirmations non vérifiées.`
+          : `The synthesis model was unavailable. This document presents the retrieved extracts without adding unverified claims.`;
+        sections = sources.map((source, index) => ({
+          heading: `${index + 1}. ${source.title}`,
+          body: `${source.snippet || (isFr ? 'Aucun extrait disponible.' : 'No extract available.')} [${index + 1}]`,
+        }));
+      } else {
+        summary = isFr
+          ? `Aucune source vérifiable n’a pu être récupérée. Aucun rapport factuel n’a été fabriqué.`
+          : `No verifiable source could be retrieved. No factual report was fabricated.`;
+        sections = [
+          {
+            heading: isFr ? 'Recherche indisponible' : 'Research unavailable',
+            body: isFr
+              ? 'Vérifiez votre connexion puis relancez la recherche. Ce brouillon ne contient aucune affirmation générée.'
+              : 'Check your connection and retry. This draft contains no generated factual claims.',
+          },
+        ];
+      }
     }
 
     // Sanitize everything that came from the model/user before templating.
@@ -109,6 +142,12 @@ Output MUST be a JSON object with this exact structure:
     const safeSections = sections.map((sec) => ({
       heading: this.escapeHtml(sec.heading),
       body: this.escapeHtml(sec.body),
+    }));
+    const safeSources = sources.map((source) => ({
+      title: this.escapeHtml(source.title),
+      // Only links returned by the search providers are rendered. Restrict the
+      // scheme so a malformed model/search response cannot inject javascript:.
+      url: /^https?:\/\//i.test(source.url) ? this.escapeHtml(source.url) : '',
     }));
 
     store.addTerminalLog('Formatting document to high-resolution print PDF...', 'cmd');
@@ -312,6 +351,13 @@ Output MUST be a JSON object with this exact structure:
     )
     .join('')}
 
+  <div class="toc-box">
+    <div class="toc-title">${isFr ? 'SOURCES VÉRIFIÉES' : 'VERIFIED SOURCES'}</div>
+    ${safeSources.length
+      ? `<ol>${safeSources.map((source) => `<li><a href="${source.url}">${source.title}</a><br><small>${source.url}</small></li>`).join('')}</ol>`
+      : `<p>${isFr ? 'Aucune source récupérée — document non vérifié.' : 'No source retrieved — unverified document.'}</p>`}
+  </div>
+
   <div class="footer-bar">
     <div>Synthesized by Seven AI Autonomous Agent for ${userName}</div>
     <div>Document ID: SVN-RES-${Date.now().toString().slice(-6)}</div>
@@ -358,6 +404,7 @@ Output MUST be a JSON object with this exact structure:
       title,
       summary,
       sections,
+      sources,
       content: htmlContent,
       pdfUri,
       timestamp: Date.now(),
