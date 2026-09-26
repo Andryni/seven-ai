@@ -372,7 +372,8 @@ export default function RoutinesScreen() {
                       `TRIGGER: ${summarize(item, lang)}`,
                       `CONDITION: ${item.graph?.conditionExpression || 'always'} → TRUE`,
                       `TRUE BRANCH: ${t(`routines.action.${item.action.type}`, lang)}`,
-                      'REPORT: dry-run complete; no action executed',
+                      `FALSE BRANCH: ${item.graph?.falseAction ? t(`routines.action.${item.graph.falseAction.type}`, lang) : 'NO-OP'}`,
+                      'REPORT: both paths validated; no action executed',
                     ];
                     setSimulationTrace(trace);
                     addTerminalLog(`ROUTINE SIMULATION ${item.name}: ${trace.join(' | ')}`, 'info');
@@ -443,6 +444,28 @@ export default function RoutinesScreen() {
                   placeholder={lang === 'fr' ? 'ex. batterie < 20, sinon toujours' : 'e.g. battery < 20, otherwise always'}
                   placeholderTextColor={palette.textFaint}
                 />
+
+                <Text style={styles.fieldLabel}>FALSE BRANCH</Text>
+                <ScrollView horizontal showsHorizontalScrollIndicator={false} contentContainerStyle={styles.chipRow}>
+                  <TouchableOpacity
+                    style={[styles.chip, !editing.graph?.falseAction && styles.chipActive]}
+                    onPress={() => setEditing({ ...editing, graph: { positions: editing.graph?.positions || {}, conditionExpression: editing.graph?.conditionExpression } })}
+                  >
+                    <Text style={[styles.chipText, !editing.graph?.falseAction && styles.chipTextActive]}>NO-OP</Text>
+                  </TouchableOpacity>
+                  {ACTION_TYPES.map((actionType) => (
+                    <TouchableOpacity
+                      key={`false-${actionType}`}
+                      style={[styles.chip, editing.graph?.falseAction?.type === actionType && styles.chipActive]}
+                      onPress={() => setEditing({
+                        ...editing,
+                        graph: { positions: editing.graph?.positions || {}, ...editing.graph, falseAction: { type: actionType } },
+                      })}
+                    >
+                      <Text style={[styles.chipText, editing.graph?.falseAction?.type === actionType && styles.chipTextActive]}>{t(`routines.action.${actionType}`, lang)}</Text>
+                    </TouchableOpacity>
+                  ))}
+                </ScrollView>
 
                 <Text style={styles.fieldLabel}>{t('routines.trigger', lang)}</Text>
                 <View style={styles.chipRow}>
