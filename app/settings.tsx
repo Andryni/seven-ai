@@ -19,6 +19,7 @@ import { ParticleBackground } from '../src/components/ParticleBackground';
 import { HudHeader } from '../src/components/HudHeader';
 import { ConnectorCard } from '../src/components/ConnectorCard';
 import { SelfHealingModal } from '../src/components/SelfHealingModal';
+import { CapabilityHero } from '../src/components/CapabilityHero';
 import { gmailService } from '../src/services/gmailService';
 import { instagramService } from '../src/services/instagramService';
 import { briefingNotifications } from '../src/services/briefingNotificationService';
@@ -664,6 +665,28 @@ export default function SettingsScreen() {
 
         {/* Section 3: API Keys & Hardware SecureStore */}
         <Text style={styles.sectionHeading}>{t('settings.secureStore', lang)}</Text>
+        <CapabilityHero
+          eyebrow={t('settings.vaultEyebrow', lang)}
+          title={t('settings.vaultTitle', lang)}
+          description={t('settings.vaultDescription', lang)}
+          icon={<ShieldCheck size={24} color={palette.accent} />}
+          metric={{
+            value: String(
+              [geminiApiKey, openRouterKey, braveSearchApiKey, fishApiKey, elevenLabsApiKey].filter(
+                (value) => value.trim().length > 0
+              ).length
+            ),
+            label: t('settings.keysConfigured', lang),
+          }}
+          chips={
+            Platform.OS === 'web'
+              ? [{ label: t('settings.sessionOnly', lang), tone: 'warning' }]
+              : [
+                  { label: t('settings.individualEntries', lang), tone: 'success' },
+                  { label: t('settings.sanitizedPrefs', lang), tone: 'accent' },
+                ]
+          }
+        />
         <View style={styles.card}>
           <View style={styles.inputGroup}>
             <View style={styles.inputHeaderRow}>

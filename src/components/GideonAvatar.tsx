@@ -290,9 +290,14 @@ export const GideonAvatar: React.FC<GideonAvatarProps> = ({
     let lookTimer: ReturnType<typeof setTimeout>;
 
     const doBlink = () => {
+      // The animated eye style also carries measured width/height. RN's native
+      // animation validator traverses that style and rejects the unsupported
+      // layout properties even though only opacity/scale change. A blink is a
+      // tiny, infrequent two-frame motion, so keeping it on the JS driver is
+      // both correct and avoids native validation errors.
       Animated.sequence([
-        Animated.timing(blink, { toValue: 0, duration: 70, useNativeDriver: true }),
-        Animated.timing(blink, { toValue: 1, duration: 110, useNativeDriver: true }),
+        Animated.timing(blink, { toValue: 0, duration: 70, useNativeDriver: false }),
+        Animated.timing(blink, { toValue: 1, duration: 110, useNativeDriver: false }),
       ]).start(() => {
         if (!alive) return;
         blinkTimer = setTimeout(doBlink, 1800 + Math.random() * 3800);

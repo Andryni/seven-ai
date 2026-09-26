@@ -12,6 +12,7 @@ import { useSevenStore } from '../src/store/useSevenStore';
 import { ParticleBackground } from '../src/components/ParticleBackground';
 import { HudHeader } from '../src/components/HudHeader';
 import { ScreenReveal } from '../src/components/ScreenReveal';
+import { CapabilityHero } from '../src/components/CapabilityHero';
 import { BottomNav } from '../src/components/BottomNav';
 import { TerminalLog } from '../src/components/TerminalLog';
 import { TypingDots } from '../src/components/LoadingIndicators';
@@ -35,6 +36,7 @@ import {
   CheckCircle2,
   HardDrive,
   FolderOpen,
+  FolderLock,
 } from 'lucide-react-native';
 
 export default function OrganizerScreen() {
@@ -162,8 +164,35 @@ export default function OrganizerScreen() {
         )}
         ListHeaderComponent={
           <>
-        {/* Banner / Info Card */}
         <ScreenReveal index={1}>
+          <CapabilityHero
+            eyebrow={t('organizer.heroEyebrow', lang)}
+            title={t('organizer.heroTitle', lang)}
+            description={t('organizer.heroDescription', lang)}
+            icon={<FolderLock size={24} color={palette.accent} />}
+            metric={
+              lastOrganizeResult
+                ? {
+                    value: String(lastOrganizeResult.files.length),
+                    label: t('organizer.lastRun', lang),
+                  }
+                : { value: '—', label: t('organizer.noRun', lang) }
+            }
+            chips={[
+              { label: t('organizer.scopedAccess', lang), tone: 'accent' },
+              { label: t('organizer.undoJournal', lang), tone: 'success' },
+              {
+                label: config.organizerDirectoryUri
+                  ? t('organizer.publicMode', lang)
+                  : t('organizer.privateMode', lang),
+                tone: config.organizerDirectoryUri ? 'success' : 'neutral',
+              },
+            ]}
+          />
+        </ScreenReveal>
+
+        {/* Banner / Info Card */}
+        <ScreenReveal index={2}>
         <View style={styles.bannerCard}>
           <View style={styles.bannerHeader}>
             <HardDrive size={16} color={palette.accent} />
@@ -326,10 +355,10 @@ const organizerStyles = (t: Palette) =>
     },
     bannerCard: {
       backgroundColor: t.bgElevated,
-      borderRadius: 8,
+      borderRadius: 14,
       borderWidth: 1,
-      borderColor: t.border,
-      padding: 14,
+      borderColor: t.borderStrong,
+      padding: 16,
       marginBottom: 14,
     },
     bannerHeader: {
@@ -339,17 +368,17 @@ const organizerStyles = (t: Palette) =>
       marginBottom: 6,
     },
     bannerTitle: {
-      fontFamily: FONT.mono,
+      fontFamily: FONT.monoBold,
       color: t.success,
-      fontSize: 11,
+      fontSize: 12,
       fontWeight: '800',
       letterSpacing: 0.5,
     },
     bannerDesc: {
-      fontFamily: FONT.mono,
+      fontFamily: FONT.ui,
       color: t.textDim,
-      fontSize: 10,
-      lineHeight: 14,
+      fontSize: 14,
+      lineHeight: 20,
       marginBottom: 14,
     },
     directoryBtn: {
@@ -377,12 +406,13 @@ const organizerStyles = (t: Palette) =>
     },
     primaryOrganizeBtn: {
       flex: 1,
+      minHeight: 48,
       flexDirection: 'row',
       alignItems: 'center',
       justifyContent: 'center',
       backgroundColor: t.success,
-      paddingVertical: 10,
-      borderRadius: 5,
+      paddingVertical: 11,
+      borderRadius: 10,
       gap: 6,
     },
     btnLoading: {
@@ -397,14 +427,15 @@ const organizerStyles = (t: Palette) =>
     },
     undoBtn: {
       flex: 1,
+      minHeight: 48,
       flexDirection: 'row',
       alignItems: 'center',
       justifyContent: 'center',
       backgroundColor: t.accentSoft,
       borderWidth: 1,
       borderColor: t.accent,
-      paddingVertical: 10,
-      borderRadius: 5,
+      paddingVertical: 11,
+      borderRadius: 10,
       gap: 6,
     },
     undoBtnDisabled: {
@@ -434,11 +465,13 @@ const organizerStyles = (t: Palette) =>
     },
     categoryCard: {
       width: '48%',
+      minHeight: 92,
       backgroundColor: t.bgElevated,
-      borderRadius: 6,
+      borderRadius: 10,
       borderWidth: 1,
       borderColor: t.border,
-      padding: 10,
+      padding: 12,
+      justifyContent: 'space-between',
     },
     catHeader: {
       flexDirection: 'row',
@@ -449,7 +482,7 @@ const organizerStyles = (t: Palette) =>
     catCountBadge: {
       fontFamily: FONT.mono,
       color: t.textDim,
-      fontSize: 9,
+      fontSize: 10,
     },
     catName: {
       fontFamily: FONT.mono,
@@ -460,8 +493,8 @@ const organizerStyles = (t: Palette) =>
     catFolder: {
       fontFamily: FONT.mono,
       color: t.textFaint,
-      fontSize: 8.5,
-      marginTop: 2,
+      fontSize: 10,
+      marginTop: 3,
     },
     filesCard: {
       backgroundColor: t.bgDeep,
@@ -502,11 +535,12 @@ const organizerStyles = (t: Palette) =>
       fontWeight: '800',
     },
     fileRow: {
+      minHeight: 44,
       flexDirection: 'row',
       justifyContent: 'space-between',
       alignItems: 'center',
-      paddingVertical: 4,
-      paddingHorizontal: 10,
+      paddingVertical: 8,
+      paddingHorizontal: 12,
       backgroundColor: t.bgDeep,
       borderLeftWidth: 1,
       borderRightWidth: 1,
@@ -520,14 +554,16 @@ const organizerStyles = (t: Palette) =>
       flex: 1,
     },
     fileName: {
-      fontFamily: FONT.mono,
+      flexShrink: 1,
+      fontFamily: FONT.ui,
       color: t.text,
-      fontSize: 10,
+      fontSize: 13,
     },
     fileCatTag: {
       fontFamily: FONT.mono,
       color: t.accent,
-      fontSize: 8.5,
+      fontSize: 10,
+      marginLeft: 8,
     },
     emptyMatrixText: {
       fontFamily: FONT.mono,

@@ -17,6 +17,7 @@ import { HudHeader } from '../src/components/HudHeader';
 import { TerminalLog } from '../src/components/TerminalLog';
 import { TypingDots } from '../src/components/LoadingIndicators';
 import { ScreenReveal } from '../src/components/ScreenReveal';
+import { CapabilityHero } from '../src/components/CapabilityHero';
 import { BottomNav } from '../src/components/BottomNav';
 import { researchService } from '../src/services/researchService';
 import { soundFx } from '../src/services/soundFxService';
@@ -30,6 +31,7 @@ import {
   BookOpen,
   CheckCircle2,
   ExternalLink,
+  SearchCheck,
 } from 'lucide-react-native';
 
 const PRESET_TOPICS = [
@@ -104,8 +106,34 @@ export default function ResearchScreen() {
       </ScreenReveal>
 
       <ScrollView style={styles.scrollArea} contentContainerStyle={styles.scrollContent}>
-        {/* Topic Input Deck */}
         <ScreenReveal index={1}>
+          <CapabilityHero
+            eyebrow={t('research.heroEyebrow', lang)}
+            title={t('research.heroTitle', lang)}
+            description={t('research.heroDescription', lang)}
+            icon={<SearchCheck size={24} color={palette.accent} />}
+            metric={
+              currentDoc
+                ? {
+                    value: String(currentDoc.sources?.length ?? 0),
+                    label: t('research.sourceCount', lang),
+                  }
+                : undefined
+            }
+            chips={[
+              {
+                label: t('research.providerOptional', lang),
+                tone: 'accent',
+              },
+              { label: 'DUCKDUCKGO', tone: 'success' },
+              { label: 'WIKIPEDIA', tone: 'success' },
+              { label: 'CROSSREF', tone: 'success' },
+            ]}
+          />
+        </ScreenReveal>
+
+        {/* Topic Input Deck */}
+        <ScreenReveal index={2}>
         <View style={styles.inputDeck}>
           <View style={styles.labelRow}>
             <Sparkles size={13} color={palette.accent} />
