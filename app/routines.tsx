@@ -40,6 +40,8 @@ import {
   BatteryWarning,
   CalendarCheck,
   Wifi,
+  BellRing,
+  GitBranch,
 } from 'lucide-react-native';
 
 const TRIGGER_TYPES: RoutineTriggerType[] = [
@@ -324,6 +326,27 @@ export default function RoutinesScreen() {
                   trackColor={{ false: palette.bgElevated, true: palette.accent }}
                   thumbColor="#FFF"
                 />
+              </View>
+              <View style={styles.graphRail}>
+                <View style={styles.graphNode}>
+                  {triggerIcon(item.trigger.type, palette.info, 12)}
+                  <Text style={styles.graphNodeText}>TRIGGER</Text>
+                </View>
+                <View style={styles.graphLink}><View style={styles.graphPulse} /></View>
+                <View style={styles.graphNode}>
+                  <GitBranch size={12} color={palette.warning} />
+                  <Text style={styles.graphNodeText}>VALIDATE</Text>
+                </View>
+                <View style={styles.graphLink}><View style={styles.graphPulse} /></View>
+                <View style={styles.graphNode}>
+                  {actionIcon(item.action.type, palette.success, 12)}
+                  <Text style={styles.graphNodeText}>EXECUTE</Text>
+                </View>
+                <View style={styles.graphLink}><View style={styles.graphPulse} /></View>
+                <View style={styles.graphNode}>
+                  <BellRing size={12} color={palette.accent} />
+                  <Text style={styles.graphNodeText}>REPORT</Text>
+                </View>
               </View>
               <View style={styles.cardBottom}>
                 <Text style={styles.cardLastRun}>
@@ -671,6 +694,11 @@ const routinesStyles = (t: Palette) =>
     cardMetaRow: { flexDirection: 'row', alignItems: 'center', gap: 4, marginTop: 2 },
     cardMeta: { fontFamily: FONT.mono, color: t.textDim, fontSize: 9.5 },
     cardAction: { fontFamily: FONT.mono, color: t.accent, fontSize: 9, marginTop: 2 },
+    graphRail: { flexDirection: 'row', alignItems: 'center', marginTop: 12, padding: 8, borderRadius: 6, borderWidth: 1, borderColor: t.border, backgroundColor: t.bgDeep },
+    graphNode: { width: 47, alignItems: 'center', gap: 3 },
+    graphNodeText: { fontFamily: FONT.mono, color: t.textFaint, fontSize: 5.8, fontWeight: '800', letterSpacing: 0.4 },
+    graphLink: { flex: 1, height: 1, backgroundColor: t.borderStrong, justifyContent: 'center' },
+    graphPulse: { width: 5, height: 5, borderRadius: 3, alignSelf: 'center', backgroundColor: t.accent },
     cardBottom: {
       flexDirection: 'row',
       justifyContent: 'space-between',

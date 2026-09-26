@@ -24,6 +24,8 @@ import { BottomNav } from '../src/components/BottomNav';
 import { TapScale } from '../src/components/TapScale';
 import { ScreenReveal } from '../src/components/ScreenReveal';
 import { AudioVisualizer } from '../src/components/AudioVisualizer';
+import { HypercoreLiveMatrix } from '../src/components/HypercoreLiveMatrix';
+import type { LiveNewsItem, LiveWeather } from '../src/services/liveInfoService';
 import { useVoice, isMicrophoneBusy } from '../src/hooks/useVoice';
 import { useTheme, useThemeStyles } from '../src/theme/theme';
 import type { Palette } from '../src/theme/theme';
@@ -138,6 +140,7 @@ export default function DashboardScreen() {
   const addChatMessage = useSevenStore((s) => s.addChatMessage);
   const updateChatMessage = useSevenStore((s) => s.updateChatMessage);
   const addTerminalLog = useSevenStore((s) => s.addTerminalLog);
+  const terminalLogs = useSevenStore((s) => s.terminalLogs);
 
   const palette = useTheme();
   const styles = useThemeStyles(dashboardStyles);
@@ -153,11 +156,34 @@ export default function DashboardScreen() {
   const [arranging, setArranging] = useState(false);
   /** '' until the launch greeting has been picked. */
   const [greetingLine, setGreetingLine] = useState('');
+  const [liveWeather, setLiveWeather] = useState<LiveWeather | null>(null);
+  const [liveNews, setLiveNews] = useState<LiveNewsItem[]>([]);
 
   const queuedRef = useRef<string | null>(null);
 
   const { isRecording, isAudible, spokenText, speak, startListening, stopListening, voiceMode } =
     useVoice();
+
+  // Keep the command matrix live without turning it into a hot polling loop.
+  // The same cached snapshot powers weather and intelligence surfaces.
+  useEffect(() => {
+    let active = true;
+    const refresh = () => {
+      void fetchLiveBriefing(language)
+        .then(({ weather, news }) => {
+          if (!active) return;
+          setLiveWeather(weather);
+          setLiveNews(news);
+        })
+        .catch(() => {});
+    };
+    refresh();
+    const timer = setInterval(refresh, 10 * 60 * 1000);
+    return () => {
+      active = false;
+      clearInterval(timer);
+    };
+  }, [language, config.city]);
 
   const handleSend = useCallback(
     async (textToSend?: string) => {
@@ -687,6 +713,20 @@ export default function DashboardScreen() {
               speechText={spokenText}
               speechRate={config.voiceRate}
             />
+            <View pointerEvents="box-none" style={styles.orbitalLayer}>
+              <TapScale style={[styles.orbitalNode, styles.orbitNW]} onPress={() => router.push('/intelligence')} accessibilityLabel="Live intelligence">
+                <Sun size={13} color={palette.warning} /><Text style={styles.orbitalText}>INTEL</Text>
+              </TapScale>
+              <TapScale style={[styles.orbitalNode, styles.orbitNE]} onPress={() => router.push('/operations')} accessibilityLabel="Operations nexus">
+                <Monitor size={13} color={palette.info} /><Text style={styles.orbitalText}>OPS</Text>
+              </TapScale>
+              <TapScale style={[styles.orbitalNode, styles.orbitSW]} onPress={() => router.push('/memory')} accessibilityLabel="Cognitive memory">
+                <Brain size={13} color={palette.accent} /><Text style={styles.orbitalText}>MEM</Text>
+              </TapScale>
+              <TapScale style={[styles.orbitalNode, styles.orbitSE]} onPress={() => router.push('/routines')} accessibilityLabel="Automation routines">
+                <Clock size={13} color={palette.success} /><Text style={styles.orbitalText}>AUTO</Text>
+              </TapScale>
+            </View>
 
             {/* Waveform: runs on real sound only, never during synthesis. */}
             <View style={styles.visualizerRow}>
@@ -754,6 +794,19 @@ export default function DashboardScreen() {
               <Text style={styles.voiceModeText}>{t('dash.voiceMode', language)}</Text>
             </TapScale>
           </View>
+        </ScreenReveal>
+
+        <ScreenReveal index={2}>
+          <HypercoreLiveMatrix
+            weather={liveWeather}
+            news={liveNews}
+            status={status}
+            isOffline={isOffline}
+            operationCount={terminalLogs.length}
+            language={language}
+            onOpenIntel={() => router.push('/intelligence')}
+            onOpenOperations={() => router.push('/operations')}
+          />
         </ScreenReveal>
 
         {/* Once per launch: a short, different, conversational hello. */}
@@ -953,6 +1006,13 @@ const dashboardStyles = (t: Palette) =>
       justifyContent: 'center',
       marginTop: 6,
     },
+    orbitalLayer: { position: 'absolute', top: 8, width: 330, height: 270 },
+    orbitalNode: { position: 'absolute', width: 46, height: 46, borderRadius: 23, borderWidth: 1, borderColor: t.borderStrong, backgroundColor: 'rgba(3,8,16,.94)', alignItems: 'center', justifyContent: 'center', gap: 2 },
+    orbitNW: { left: 0, top: 28 },
+    orbitNE: { right: 0, top: 28 },
+    orbitSW: { left: 4, bottom: 20 },
+    orbitSE: { right: 4, bottom: 20 },
+    orbitalText: { color: t.textDim, fontFamily: FONT.mono, fontSize: 6, fontWeight: '800', letterSpacing: .5 },
     visualizerRow: {
       marginTop: 4,
       alignItems: 'center',
