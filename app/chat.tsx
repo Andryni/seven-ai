@@ -961,7 +961,8 @@ export default function ChatScreen() {
             disabled={(!inputQuery.trim() && !selectedImage && !pendingDocument) || isProcessing}
           >
             <Send size={16} color={palette.bgDeep} />
-          </TouchableOpacity>          </View>
+          </TouchableOpacity>
+        </View>
         </View>
       </ScreenReveal>
 
