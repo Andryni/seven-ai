@@ -1,0 +1,50 @@
+name: Android device smoke test
+
+on:
+  workflow_dispatch: {}
+  schedule:
+    - cron: '0 3 * * 1'
+
+concurrency:
+  group: android-e2e-${{ github.ref }}
+  cancel-in-progress: true
+
+jobs:
+  emulator:
+    runs-on: ubuntu-latest
+    timeout-minutes: 45
+    env:
+      EXPO_NO_TELEMETRY: '1'
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-node@v4
+        with:
+          node-version: '22'
+          cache: npm
+      - uses: actions/setup-java@v4
+        with:
+          distribution: temurin
+          java-version: '17'
+      - run: npm ci
+      - name: Generate native Android project
+        run: npx expo prebuild --platform android --clean --no-install
+      - name: Install Maestro
+        run: curl -Ls 'https://get.maestro.mobile.dev' | bash
+      - name: Build, install and exercise the app
+        uses: reactivecircus/android-emulator-runner@v2
+        with:
+          api-level: 35
+          arch: x86_64
+          profile: pixel_6
+          disable-animations: true
+          script: |
+            cd android
+            ./gradlew app:assembleDebug --no-daemon
+            adb install -r app/build/outputs/apk/debug/app-debug.apk
+            cd ..
+            CI=1 npx expo start --offline --port 8081 > /tmp/seven-metro.log 2>&1 &
+            METRO_PID=$!
+            trap 'kill "$METRO_PID" 2>/dev/null || true; cat /tmp/seven-metro.log' EXIT
+            timeout 90 bash -c 'until curl -fsS http://127.0.0.1:8081/status | grep -q packager-status:running; do sleep 2; done'
+            adb reverse tcp:8081 tcp:8081
+            "$HOME/.maestro/bin/maestro" test .maestro/dashboard-smoke.yaml

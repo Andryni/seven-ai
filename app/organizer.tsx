@@ -5,6 +5,7 @@ import {
   Text,
   TouchableOpacity,
   FlatList,
+  Platform,
 } from 'react-native';
 import { useRouter } from 'expo-router';
 import { useSevenStore } from '../src/store/useSevenStore';
@@ -33,6 +34,7 @@ import {
   ChevronLeft,
   CheckCircle2,
   HardDrive,
+  FolderOpen,
 } from 'lucide-react-native';
 
 export default function OrganizerScreen() {
@@ -51,6 +53,16 @@ export default function OrganizerScreen() {
   useEffect(() => {
     fileOrganizer.ensureDownloadsFolder().catch(() => {});
   }, []);
+
+  const handleSelectDirectory = async () => {
+    haptics.light();
+    try {
+      const result = await fileOrganizer.selectPublicDirectory();
+      if (!result.granted) addTerminalLog(t('organizer.permissionDenied', lang), 'warn');
+    } catch (e: any) {
+      addTerminalLog(`${t('organizer.permissionError', lang)}: ${e?.message || e}`, 'error');
+    }
+  };
 
   const handleOrganize = async () => {
     haptics.light();
@@ -117,7 +129,7 @@ export default function OrganizerScreen() {
           onPress={() => router.push('/')}
         >
           <ChevronLeft size={16} color={palette.accent} />
-          <Text style={styles.backBtnText}>DASHBOARD</Text>
+          <Text style={styles.backBtnText}>{t('nav.dashboard', lang)}</Text>
         </TouchableOpacity>
 
         <View style={styles.titleWrap}>
@@ -155,12 +167,29 @@ export default function OrganizerScreen() {
         <View style={styles.bannerCard}>
           <View style={styles.bannerHeader}>
             <HardDrive size={16} color={palette.accent} />
-            <Text style={styles.bannerTitle}>DOWNLOADS DIRECTORY // APP SANDBOX</Text>
+            <Text style={styles.bannerTitle}>
+              {config.organizerDirectoryUri
+                ? t('organizer.publicDirectory', lang)
+                : t('organizer.privateSandbox', lang)}
+            </Text>
           </View>
           <Text style={styles.bannerDesc}>
-            Scans the app Downloads directory, analyzes file signatures, creates
-            clean categorized subfolders, and records a reversible JSON journal for 1-click Undo.
+            {config.organizerDirectoryUri
+              ? t('organizer.publicDescription', lang)
+              : t('organizer.privateDescription', lang)}
           </Text>
+
+          {Platform.OS === 'android' && (
+            <TouchableOpacity
+              style={styles.directoryBtn}
+              accessibilityRole="button"
+              accessibilityLabel={t('organizer.selectDirectory', lang)}
+              onPress={handleSelectDirectory}
+            >
+              <FolderOpen size={15} color={palette.accent} />
+              <Text style={styles.directoryBtnText}>{t('organizer.selectDirectory', lang)}</Text>
+            </TouchableOpacity>
+          )}
 
           {/* Action Buttons Row */}
           <View style={styles.actionButtonsRow}>
@@ -172,7 +201,7 @@ export default function OrganizerScreen() {
             >
               <FolderSync size={15} color={palette.bgDeep} />
               <Text style={styles.primaryOrganizeText}>
-                {loading ? 'ORGANIZING' : t('organizer.organize', lang).toUpperCase()}
+                {loading ? t('organizer.organizing', lang) : t('organizer.organize', lang).toUpperCase()}
               </Text>
               {loading && <TypingDots color={palette.bgDeep} size={4} />}
             </TouchableOpacity>
@@ -189,7 +218,7 @@ export default function OrganizerScreen() {
             >
               <RotateCcw size={14} color={palette.accent} />
               <Text style={styles.undoBtnText}>
-                {undoLoading ? 'RESTORING' : t('organizer.undo', lang).toUpperCase()}
+                {undoLoading ? t('organizer.restoring', lang) : t('organizer.undo', lang).toUpperCase()}
               </Text>
               {undoLoading && <TypingDots color={palette.accent} size={4} />}
             </TouchableOpacity>
@@ -199,16 +228,16 @@ export default function OrganizerScreen() {
 
         {/* Live Terminal Log Component */}
         <ScreenReveal index={2}>
-          <Text style={styles.sectionHeader}>STORAGE KERNEL LOG</Text>
+          <Text style={styles.sectionHeader}>{t('organizer.log', lang)}</Text>
           <TerminalLog maxHeight={190} title="SEVEN_OS // FILE_ORGANIZER.SYS" />
         </ScreenReveal>
 
         {/* Category breakdown Grid */}
         <ScreenReveal index={3}>
-        <Text style={styles.sectionHeader}>AUTOMATIC CLASSIFICATION MATRIX</Text>
+        <Text style={styles.sectionHeader}>{t('organizer.matrix', lang)}</Text>
         {Object.keys(categories).length === 0 && (
           <Text style={styles.emptyMatrixText}>
-            NO SESSION YET — RUN ORGANIZE DOWNLOADS TO POPULATE THIS MATRIX.
+            {t('organizer.empty', lang)}
           </Text>
         )}
         <View style={styles.categoryGrid}>
@@ -216,7 +245,7 @@ export default function OrganizerScreen() {
             <View key={catName} style={styles.categoryCard}>
               <View style={styles.catHeader}>
                 {getCategoryIcon(catName)}
-                <Text style={styles.catCountBadge}>{count} files</Text>
+                <Text style={styles.catCountBadge}>{count} {t('organizer.files', lang)}</Text>
               </View>
               <Text style={styles.catName}>{catName.toUpperCase()}</Text>
               <Text style={styles.catFolder}>/Downloads/{catName}/</Text>
@@ -233,7 +262,7 @@ export default function OrganizerScreen() {
               <View style={styles.filesHeader}>
                 <CheckCircle2 size={13} color={palette.success} />
                 <Text style={styles.filesTitle}>
-                  JOURNAL STATUS: {lastOrganizeResult.status.toUpperCase()} ({lastOrganizeResult.files.length} ITEMS)
+                  {t('organizer.journal', lang)}: {lastOrganizeResult.status.toUpperCase()} ({lastOrganizeResult.files.length} {t('organizer.files', lang).toUpperCase()})
                 </Text>
               </View>
             </View>
@@ -322,6 +351,25 @@ const organizerStyles = (t: Palette) =>
       fontSize: 10,
       lineHeight: 14,
       marginBottom: 14,
+    },
+    directoryBtn: {
+      minHeight: 44,
+      flexDirection: 'row',
+      alignItems: 'center',
+      justifyContent: 'center',
+      gap: 8,
+      borderWidth: 1,
+      borderColor: t.borderStrong,
+      backgroundColor: t.accentSoft,
+      borderRadius: 5,
+      marginBottom: 12,
+      paddingHorizontal: 12,
+    },
+    directoryBtnText: {
+      fontFamily: FONT.mono,
+      color: t.accent,
+      fontSize: 11,
+      fontWeight: '800',
     },
     actionButtonsRow: {
       flexDirection: 'row',

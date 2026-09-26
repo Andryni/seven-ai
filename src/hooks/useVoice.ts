@@ -588,10 +588,8 @@ export const useVoice = () => {
         if (settled) return;
         settled = true;
         wantActiveRef.current = false;
-        // Readable proof that speech reached the app — the same idea as the
-        // `[ota]` line: without it, "the microphone did not understand me" can
-        // only be investigated with a cable attached.
-        console.log(`[stt] ${priority} recognised: ${transcript.slice(0, 90)}`);
+        // Never print recognized speech: logcat may be collected in support
+        // reports and voice transcripts can contain private information.
         // Keep the last recognized words on screen: they are what the user
         // just said, and clearing them here would blank the transcript the
         // moment it becomes useful.

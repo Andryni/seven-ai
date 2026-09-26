@@ -1,3 +1,4 @@
+import { fetchWithTimeout } from './network';
 import { Platform } from 'react-native';
 import { playRemoteAudio, stopPlaybackAudio } from './audioPlayback';
 
@@ -117,7 +118,7 @@ export const verifyFishAudioKey = async (
   if (key.length < 16) return { ok: false, message: 'Key looks too short' };
 
   try {
-    const response = await fetch(TTS_URL, {
+    const response = await fetchWithTimeout(TTS_URL, {
       method: 'POST',
       headers: {
         Authorization: `Bearer ${key}`,
@@ -163,7 +164,7 @@ class FishAudioService {
     await this.stopAudio();
 
     try {
-      const response = await fetch(TTS_URL, {
+      const response = await fetchWithTimeout(TTS_URL, {
         method: 'POST',
         headers: {
           Authorization: `Bearer ${options.apiKey.trim()}`,
@@ -249,7 +250,7 @@ class FishAudioService {
         let prefetched: { sentence: string; response: Response } | null = null;
 
         const requestClip = async (sentence: string): Promise<Response> => {
-          const response = await fetch(TTS_URL, {
+          const response = await fetchWithTimeout(TTS_URL, {
             method: 'POST',
             headers: {
               Authorization: `Bearer ${options.apiKey!.trim()}`,

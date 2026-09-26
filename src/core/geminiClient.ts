@@ -27,7 +27,18 @@ import { GoogleGenAI, type GenerateContentConfig } from '@google/genai';
 /** Newest first. Kept short: this is a safety net, not a version matrix. */
 const MODEL_CANDIDATES = ['gemini-3.6-flash', 'gemini-2.5-flash', 'gemini-2.0-flash', 'gemini-1.5-flash'] as const;
 
-let cachedWorkingModel: string | null = null;
+// Availability may differ between API keys/projects. A single global model id
+// could make a second account reuse a model it cannot access. Cache by a
+// one-way, process-local fingerprint instead of retaining the raw secret.
+const modelCache = new Map<string, string>();
+function keyFingerprint(key: string): string {
+  let hash = 2166136261;
+  for (let i = 0; i < key.length; i += 1) {
+    hash ^= key.charCodeAt(i);
+    hash = Math.imul(hash, 16777619);
+  }
+  return `${key.length}:${hash >>> 0}`;
+}
 
 /** True for "this model id does not exist / is not available", as opposed to
  * quota, network or content-safety errors that no model swap would fix. */
@@ -153,6 +164,8 @@ export async function resolveModel(
   params: LegacyModelParams
 ): Promise<{ model: ResolvedModel; modelId: string }> {
   const ai = new GoogleGenAI({ apiKey });
+  const fingerprint = keyFingerprint(apiKey);
+  const cachedWorkingModel = modelCache.get(fingerprint);
 
   if (cachedWorkingModel) {
     return { model: makeResolvedModel(ai, cachedWorkingModel, params), modelId: cachedWorkingModel };
@@ -168,7 +181,7 @@ export async function resolveModel(
         contents: 'ping',
         config: { maxOutputTokens: 1 },
       });
-      cachedWorkingModel = candidate;
+      modelCache.set(fingerprint, candidate);
       return { model: makeResolvedModel(ai, candidate, params), modelId: candidate };
     } catch (e) {
       lastError = e;
@@ -187,7 +200,7 @@ export async function resolveModel(
  * candidate if nothing has been resolved yet. */
 export function getModelSync(apiKey: string, params: LegacyModelParams): { model: ResolvedModel; modelId: string } {
   const ai = new GoogleGenAI({ apiKey });
-  const modelId = cachedWorkingModel ?? MODEL_CANDIDATES[0];
+  const modelId = modelCache.get(keyFingerprint(apiKey)) ?? MODEL_CANDIDATES[0];
   return { model: makeResolvedModel(ai, modelId, params), modelId };
 }
 

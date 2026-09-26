@@ -183,12 +183,21 @@ export default function ChatScreen() {
     haptics.light();
     try {
       const doc = await documentAnalysisService.pickAndReadDocument();
-      if (doc.success && doc.textSnippet) {
-        const prompt = `Analyse et résume ce document "${doc.name}" :\n\n"""\n${doc.textSnippet}\n"""`;
-        handleSend(prompt);
+      if (!doc.success) {
+        addTerminalLog(doc.message, 'warn');
+        return;
       }
-    } catch (e) {
-      console.warn('Error reading document:', e);
+      const instruction =
+        (config.language || 'en') === 'fr'
+          ? `Analyse et résume le document « ${doc.name} ». Signale clairement toute page ou partie illisible.`
+          : `Analyze and summarize “${doc.name}”. Clearly identify any unreadable page or section.`;
+      if (doc.base64) {
+        await handleSend(instruction, { base64: doc.base64, mimeType: doc.mimeType || 'application/pdf' });
+      } else if (doc.textSnippet) {
+        await handleSend(`${instruction}\n\n---\n${doc.textSnippet}\n---`);
+      }
+    } catch (e: any) {
+      addTerminalLog(`Document error: ${e?.message || e}`, 'error');
     }
   };
 
@@ -304,9 +313,12 @@ export default function ChatScreen() {
     }, delayMs);
   };
 
-  const handleSend = async (textToSend?: string) => {
+  const handleSend = async (
+    textToSend?: string,
+    attachmentOverride?: { uri?: string; base64: string; mimeType: string }
+  ) => {
     const query = textToSend || inputQuery;
-    const currentImage = selectedImage;
+    const currentImage = attachmentOverride || selectedImage;
     if ((!query.trim() && !currentImage) || isProcessing) return;
 
     haptics.light();

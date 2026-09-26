@@ -334,7 +334,11 @@ export const GideonAvatar: React.FC<GideonAvatarProps> = ({
       toValue: browFurrowFor(status),
       duration: 300,
       easing: Easing.out(Easing.cubic),
-      useNativeDriver: true,
+      // `knit` ultimately drives SVG layout attributes (including eyebrow
+      // geometry). React Native's native driver only supports opacity and
+      // transforms; marking this native produced a runtime validation error
+      // and could drop the animation on device.
+      useNativeDriver: false,
     }).start();
   }, [knit, status]);
 
@@ -365,7 +369,7 @@ export const GideonAvatar: React.FC<GideonAvatarProps> = ({
       toValue: happy,
       duration: happy ? 260 : 420,
       easing: Easing.out(Easing.cubic),
-      useNativeDriver: true,
+      useNativeDriver: false,
     }).start();
   }, [smile, status, mood, autoSmile]);
 
@@ -376,7 +380,7 @@ export const GideonAvatar: React.FC<GideonAvatarProps> = ({
       toValue: alarmed,
       duration: alarmed ? 170 : 520,
       easing: Easing.out(Easing.cubic),
-      useNativeDriver: true,
+      useNativeDriver: false,
     }).start();
   }, [alertness, status, mood, autoSmile]);
 
@@ -405,21 +409,17 @@ export const GideonAvatar: React.FC<GideonAvatarProps> = ({
   // ---------------------------------------------------------------- Lip sync
   // Every viseme frame animates the three mouth parameters over exactly its
   // own duration, so the lips land on the right shape at the right time.
-  const restoreMouth = useRef<() => void>(() => {});
-
   useEffect(() => {
     const animateTo = (viseme: VisemeId, durationMs: number) => {
       const shape = VISEME_SHAPES[viseme];
       const duration = Math.max(45, Math.min(durationMs, 420));
       const easing = Easing.inOut(Easing.quad);
       Animated.parallel([
-        Animated.timing(mouthOpen, { toValue: shape.open, duration, easing, useNativeDriver: true }),
-        Animated.timing(mouthWidth, { toValue: shape.width, duration, easing, useNativeDriver: true }),
-        Animated.timing(lipFull, { toValue: shape.full, duration, easing, useNativeDriver: true }),
+        Animated.timing(mouthOpen, { toValue: shape.open, duration, easing, useNativeDriver: false }),
+        Animated.timing(mouthWidth, { toValue: shape.width, duration, easing, useNativeDriver: false }),
+        Animated.timing(lipFull, { toValue: shape.full, duration, easing, useNativeDriver: false }),
       ]).start();
     };
-    restoreMouth.current = () => animateTo('rest', 220);
-
     // Either not speaking, or the utterance is still being synthesized (the
     // voice engine has not reported playback start, so there is no text yet).
     // Articulating an empty transcript is exactly what made the lips flap in
@@ -470,9 +470,16 @@ export const GideonAvatar: React.FC<GideonAvatarProps> = ({
     };
   }, [status, speechText, speechRate, mouthOpen, mouthWidth, lipFull]);
 
-  // Mouth closing when the avatar unmounts and never got the "not speaking"
-  // pass (keeps the rest shape consistent when remounting).
-  useEffect(() => () => restoreMouth.current(), []);
+  // Do not start a JS-driven closing animation during unmount: there is no
+  // frame left to display and its timer would outlive the component/test.
+  useEffect(
+    () => () => {
+      mouthOpen.stopAnimation();
+      mouthWidth.stopAnimation();
+      lipFull.stopAnimation();
+    },
+    [mouthOpen, mouthWidth, lipFull]
+  );
 
   // ----------------------------------------------------------- Interpolations
   const bobY = bob.interpolate({ inputRange: [0, 1], outputRange: [0, -size * 0.025] });

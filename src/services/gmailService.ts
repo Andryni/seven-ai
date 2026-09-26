@@ -1,3 +1,4 @@
+import { fetchWithTimeout } from './network';
 import * as WebBrowser from 'expo-web-browser';
 import * as AuthSession from 'expo-auth-session';
 import * as SecureStore from 'expo-secure-store';
@@ -89,7 +90,7 @@ class GmailService {
       }
 
       // Exchange the authorization code for tokens (code_verifier included).
-      const tokenResponse = await fetch('https://oauth2.googleapis.com/token', {
+      const tokenResponse = await fetchWithTimeout('https://oauth2.googleapis.com/token', {
         method: 'POST',
         headers: { 'Content-Type': 'application/x-www-form-urlencoded' },
         body: new URLSearchParams({
@@ -119,7 +120,7 @@ class GmailService {
       // Fetch the user's email address from the userinfo endpoint.
       let email = '';
       try {
-        const infoRes = await fetch(
+        const infoRes = await fetchWithTimeout(
           `https://www.googleapis.com/oauth2/v3/userinfo?access_token=${encodeURIComponent(accessToken)}`
         );
         if (infoRes.ok) {
@@ -156,7 +157,7 @@ class GmailService {
     }
 
     try {
-      const listRes = await fetch(
+      const listRes = await fetchWithTimeout(
         'https://gmail.googleapis.com/gmail/v1/users/me/messages?maxResults=5&q=is:unread',
         { headers: { Authorization: `Bearer ${accessToken}` } }
       );
@@ -179,7 +180,7 @@ class GmailService {
       // Fetch metadata for each message (parallel, capped at 5).
       const details = await Promise.all(
         messages.slice(0, 5).map(async (m) => {
-          const msgRes = await fetch(
+          const msgRes = await fetchWithTimeout(
             `https://gmail.googleapis.com/gmail/v1/users/me/messages/${m.id}?format=metadata&metadataHeaders=From&metadataHeaders=Subject`,
             { headers: { Authorization: `Bearer ${accessToken}` } }
           );

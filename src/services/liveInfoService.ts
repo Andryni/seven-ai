@@ -1,3 +1,4 @@
+import { fetchWithTimeout } from './network';
 import { useSevenStore } from '../store/useSevenStore';
 
 /**
@@ -69,7 +70,7 @@ export async function resolveCity(
     const url = `https://geocoding-api.open-meteo.com/v1/search?name=${encodeURIComponent(
       city
     )}&count=1&language=${language}`;
-    const res = await fetch(url);
+    const res = await fetchWithTimeout(url);
     if (!res.ok) return null;
     const json = await res.json();
     const hit = json?.results?.[0];
@@ -95,7 +96,7 @@ export async function fetchWeather(
     const url =
       `https://api.open-meteo.com/v1/forecast?latitude=${place.latitude}&longitude=${place.longitude}` +
       `&current=temperature_2m,relative_humidity_2m,is_day,weather_code,wind_speed_10m&wind_speed_unit=kmh`;
-    const res = await fetch(url);
+    const res = await fetchWithTimeout(url);
     if (!res.ok) return null;
     const json = await res.json();
     const cur = json?.current;
@@ -186,11 +187,11 @@ export async function fetchNews(
   const feeds = NEWS_FEEDS[language] ?? NEWS_FEEDS.en;
   const settled = await Promise.allSettled(
     feeds.map(async (feed) => {
-      const res = await fetch(feed.url, {
+      const res = await fetchWithTimeout(feed.url, {
         headers: {
           Accept: 'application/rss+xml, application/xml, text/xml, */*',
           // Some publishers (BBC…) answer an empty body to unknown clients.
-          'User-Agent': 'SevenAI/3.2 (Android)',
+          'User-Agent': 'SevenAI/3.3 (Android)',
         },
       });
       if (!res.ok) throw new Error(`HTTP ${res.status}`);

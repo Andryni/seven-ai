@@ -96,6 +96,7 @@ export default function SettingsScreen() {
   const [userName, setUserName] = useDraft(config.userName || 'Commander');
   const [geminiApiKey, setGeminiApiKey] = useDraft(config.geminiApiKey || '');
   const [openRouterKey, setOpenRouterKey] = useDraft(config.openRouterKey || '');
+  const [braveSearchApiKey, setBraveSearchApiKey] = useDraft(config.braveSearchApiKey || '');
   const [googleClientId, setGoogleClientId] = useDraft(config.googleClientId || '');
   const [voiceEnabled, setVoiceEnabled] = useDraft(config.voiceEnabled);
   const [voicePitch, setVoicePitch] = useDraft(config.voicePitch || 1.0);
@@ -245,6 +246,7 @@ export default function SettingsScreen() {
       userName: userName.trim() || 'Commander',
       geminiApiKey: geminiApiKey.trim() || config.geminiApiKey || '',
       openRouterKey: openRouterKey.trim() || config.openRouterKey || '',
+      braveSearchApiKey: braveSearchApiKey.trim() || config.braveSearchApiKey || '',
       googleClientId: googleClientId.trim() || config.googleClientId || '',
       voiceEnabled,
       voicePitch,
@@ -348,12 +350,12 @@ export default function SettingsScreen() {
           onPress={() => router.push('/')}
         >
           <ChevronLeft size={16} color={palette.accent} />
-          <Text style={styles.backBtnText}>DASHBOARD</Text>
+          <Text style={styles.backBtnText}>{t('nav.dashboard', lang)}</Text>
         </TouchableOpacity>
 
         <View style={styles.titleWrap}>
           <Settings size={15} color={palette.accent} />
-          <Text style={styles.titleText}>SYSTEM &amp; CONNECTIVITY</Text>
+          <Text style={styles.titleText}>{t('settings.title', lang)}</Text>
         </View>
 
         <TouchableOpacity
@@ -361,7 +363,7 @@ export default function SettingsScreen() {
           accessibilityLabel={lang === 'fr' ? "Assistant de configuration" : 'Setup wizard'}
           onPress={() => router.push('/onboarding')}
         >
-          <Text style={styles.onboardingLinkText}>WIZARD</Text>
+          <Text style={styles.onboardingLinkText}>{t('settings.wizard', lang)}</Text>
         </TouchableOpacity>
       </View>
 
@@ -449,7 +451,7 @@ export default function SettingsScreen() {
           {/* Avatar Core Engine — Gideon is the single holographic identity.
               The legacy orb engines are retired (see store config migration). */}
           <View style={[styles.appearanceRow, styles.appearanceRowSpaced]}>
-            <Text style={styles.inputLabel}>AVATAR CORE ENGINE</Text>
+            <Text style={styles.inputLabel}>{t('settings.avatarEngine', lang)}</Text>
             <View style={styles.chipRow}>
               <View style={[styles.langChip, styles.langChipActive]}>
                 <Text style={[styles.langChipText, styles.langChipTextActive]}>
@@ -464,7 +466,7 @@ export default function SettingsScreen() {
 
           {/* Gyroscope Motion Toggle */}
           <View style={[styles.appearanceRow, styles.appearanceRowSpaced]}>
-            <Text style={styles.inputLabel}>GYROSCOPE 3D TILT DYNAMICS</Text>
+            <Text style={styles.inputLabel}>{t('settings.gyroscope', lang)}</Text>
             <Switch
               value={config.gyroEnabled ?? true}
               onValueChange={(val) => {
@@ -577,7 +579,7 @@ export default function SettingsScreen() {
         </View>
 
         {/* Section 1: Connectors & Integrations */}
-        <Text style={styles.sectionHeading}>SYSTEM CONNECTORS // ZERO-TRUST MATRIX</Text>
+        <Text style={styles.sectionHeading}>{t('settings.connectors', lang)}</Text>
 
         {/* Google Workspace Connector */}
         <ConnectorCard
@@ -604,7 +606,7 @@ export default function SettingsScreen() {
             accessibilityLabel="Disconnect Google"
             onPress={handleDisconnectGoogle}
           >
-            <Text style={styles.disconnectText}>DISCONNECT GOOGLE</Text>
+            <Text style={styles.disconnectText}>{t('settings.disconnectGoogle', lang)}</Text>
           </TouchableOpacity>
         )}
 
@@ -635,10 +637,10 @@ export default function SettingsScreen() {
         />
 
         {/* Section 2: Identity & Persona */}
-        <Text style={styles.sectionHeading}>IDENTITY &amp; NEURAL PROFILE</Text>
+        <Text style={styles.sectionHeading}>{t('settings.profile', lang)}</Text>
         <View style={styles.card}>
           <View style={styles.inputGroup}>
-            <Text style={styles.inputLabel}>ASSISTANT IDENTIFIER</Text>
+            <Text style={styles.inputLabel}>{t('settings.assistantIdentifier', lang)}</Text>
             <TextInput
               style={styles.textInput}
               value={assistantName}
@@ -649,7 +651,7 @@ export default function SettingsScreen() {
           </View>
 
           <View style={styles.inputGroup}>
-            <Text style={styles.inputLabel}>USER CALLSIGN / NAME</Text>
+            <Text style={styles.inputLabel}>{t('settings.userCallsign', lang)}</Text>
             <TextInput
               style={styles.textInput}
               value={userName}
@@ -661,25 +663,25 @@ export default function SettingsScreen() {
         </View>
 
         {/* Section 3: API Keys & Hardware SecureStore */}
-        <Text style={styles.sectionHeading}>HARDWARE KEYSTORE (EXPO-SECURE-STORE)</Text>
+        <Text style={styles.sectionHeading}>{t('settings.secureStore', lang)}</Text>
         <View style={styles.card}>
           <View style={styles.inputGroup}>
             <View style={styles.inputHeaderRow}>
-              <Text style={styles.inputLabel}>GEMINI API KEY (FLASH & PRO)</Text>
+              <Text style={styles.inputLabel}>{t('settings.geminiKey', lang)}</Text>
               <TouchableOpacity
                 style={styles.getKeyBtn}
                 accessibilityLabel="Get Gemini API key"
                 onPress={handleGetApiKey}
               >
                 <ExternalLink size={10} color={palette.bgDeep} />
-                <Text style={styles.getKeyBtnText}>GET API</Text>
+                <Text style={styles.getKeyBtnText}>{t('settings.getApi', lang)}</Text>
               </TouchableOpacity>
             </View>
             <TextInput
               style={styles.textInput}
               value={geminiApiKey}
               onChangeText={setGeminiApiKey}
-              placeholder="AIzaSy... (AES-256 encrypted)"
+              placeholder="AIzaSy... (system secure store on mobile)"
               placeholderTextColor={palette.textFaint}
               autoCapitalize="none"
               autoCorrect={false}
@@ -690,7 +692,7 @@ export default function SettingsScreen() {
           </View>
 
           <View style={styles.inputGroup}>
-            <Text style={styles.inputLabel}>GOOGLE OAUTH CLIENT ID (REAL GMAIL)</Text>
+            <Text style={styles.inputLabel}>{t('settings.googleClientId', lang)}</Text>
             <TextInput
               style={styles.textInput}
               value={googleClientId}
@@ -704,7 +706,7 @@ export default function SettingsScreen() {
 
           <View style={styles.inputGroup}>
             <View style={styles.inputHeaderRow}>
-              <Text style={styles.inputLabel}>OPENROUTER KEY (SECOND BRAIN, OPTIONAL)</Text>
+              <Text style={styles.inputLabel}>{t('settings.openRouterKey', lang)}</Text>
               <View
                 style={[
                   styles.fallbackBadge,
@@ -741,6 +743,21 @@ export default function SettingsScreen() {
               Used automatically when Gemini has no key configured or is unreachable —
               real conversational answers instead of the local keyword engine.
             </Text>
+          </View>
+
+          <View style={styles.inputGroup}>
+            <Text style={styles.inputLabel}>{t('settings.braveKey', lang)}</Text>
+            <TextInput
+              style={styles.textInput}
+              value={braveSearchApiKey}
+              onChangeText={setBraveSearchApiKey}
+              placeholder="BSA..."
+              placeholderTextColor={palette.textFaint}
+              autoCapitalize="none"
+              autoCorrect={false}
+              secureTextEntry
+            />
+            <Text style={styles.oauthExplainerText}>{t('settings.braveHint', lang)}</Text>
           </View>
         </View>
 
@@ -807,14 +824,14 @@ export default function SettingsScreen() {
         </View>
 
         {/* Section 6: Voice & Speech */}
-        <Text style={styles.sectionHeading}>AUDIO DSP &amp; SPEECH SYNTHESIS</Text>
+        <Text style={styles.sectionHeading}>{t('settings.audio', lang)}</Text>
         <View style={styles.card}>
           <View style={styles.switchRow}>
             <View style={styles.switchLabelLeft}>
               <Volume2 size={16} color={palette.success} />
               <View>
-                <Text style={styles.switchTitle}>Expo Speech TTS Output</Text>
-                <Text style={styles.switchDesc}>Speak AI responses aloud automatically</Text>
+                <Text style={styles.switchTitle}>{t('settings.tts', lang)}</Text>
+                <Text style={styles.switchDesc}>{t('settings.ttsHint', lang)}</Text>
               </View>
             </View>
             <Switch
@@ -887,7 +904,7 @@ export default function SettingsScreen() {
 
           {/* Language selector */}
           <View style={styles.sliderGroup}>
-            <Text style={styles.sliderLabel}>VOICE LANGUAGE</Text>
+            <Text style={styles.sliderLabel}>{t('settings.voiceLanguage', lang)}</Text>
             <View style={styles.langRow}>
               {VOICE_LANGUAGES.map((voiceLang) => (
                 <TouchableOpacity
@@ -914,7 +931,7 @@ export default function SettingsScreen() {
 
           {/* Voice Engine Mode (System TTS vs Fish Audio JARVIS vs legacy ElevenLabs) */}
           <View style={styles.sliderGroup}>
-            <Text style={styles.sliderLabel}>NEURAL VOICE ENGINE</Text>
+            <Text style={styles.sliderLabel}>{t('settings.voiceEngine', lang)}</Text>
             <View style={styles.langRow}>
               {(
                 [
@@ -955,7 +972,7 @@ export default function SettingsScreen() {
           {voiceEngine === 'fish' && (
             <>
               <View style={styles.inputGroup}>
-                <Text style={styles.inputLabel}>FISH AUDIO API KEY</Text>
+                <Text style={styles.inputLabel}>{t('settings.fishKey', lang)}</Text>
                 <TextInput
                   style={styles.textInput}
                   value={fishApiKey}
@@ -991,7 +1008,7 @@ export default function SettingsScreen() {
                 </View>
               </View>
               <View style={styles.inputGroup}>
-                <Text style={styles.inputLabel}>JARVIS VOICE — ENGLISH</Text>
+                <Text style={styles.inputLabel}>{t('settings.jarvisEnglish', lang)}</Text>
                 <TextInput
                   style={styles.textInput}
                   value={fishVoiceIdEn}
@@ -1003,7 +1020,7 @@ export default function SettingsScreen() {
                 />
               </View>
               <View style={styles.inputGroup}>
-                <Text style={styles.inputLabel}>JARVIS VOICE — FRANÇAIS</Text>
+                <Text style={styles.inputLabel}>{t('settings.jarvisFrench', lang)}</Text>
                 <TextInput
                   style={styles.textInput}
                   value={fishVoiceIdFr}
@@ -1020,7 +1037,7 @@ export default function SettingsScreen() {
           {voiceEngine === 'elevenlabs' && (
             <>
               <View style={styles.inputGroup}>
-                <Text style={styles.inputLabel}>ELEVENLABS API KEY</Text>
+                <Text style={styles.inputLabel}>{t('settings.elevenKey', lang)}</Text>
                 <TextInput
                   style={styles.textInput}
                   value={elevenLabsApiKey}
@@ -1033,7 +1050,7 @@ export default function SettingsScreen() {
                 />
               </View>
               <View style={styles.inputGroup}>
-                <Text style={styles.inputLabel}>VOICE ID (DEFAULT: RACHEL)</Text>
+                <Text style={styles.inputLabel}>{t('settings.voiceId', lang)}</Text>
                 <TextInput
                   style={styles.textInput}
                   value={elevenLabsVoiceId}
@@ -1075,13 +1092,13 @@ export default function SettingsScreen() {
         </View>
 
         {/* Section 7: Anti-Panic Engine & Self-Healing */}
-        <Text style={styles.sectionHeading}>ANTI-PANIC ENGINE // AST HOT-PATCHING</Text>
+        <Text style={styles.sectionHeading}>{t('settings.diagnostics', lang)}</Text>
         <View style={styles.card}>
           <View style={styles.astStatusRow}>
             <View style={styles.astHeaderLeft}>
               <ShieldCheck size={16} color={palette.error} />
               <View>
-                <Text style={styles.astTitle}>AST Boundary Protection: ARMED</Text>
+                <Text style={styles.astTitle}>{t('settings.diagnosticsStatus', lang)}</Text>
                 <Text style={styles.astDesc}>
                   Total Patches Applied: {patchLogs.length} | Last: #{patchLogs[0]?.id || 'NONE'}
                 </Text>
@@ -1094,7 +1111,7 @@ export default function SettingsScreen() {
               onPress={() => setShowSelfHealingModal(true)}
             >
               <Bug size={12} color={palette.text} />
-              <Text style={styles.viewPatchBtnText}>INSPECT</Text>
+              <Text style={styles.viewPatchBtnText}>{t('settings.inspect', lang)}</Text>
             </TouchableOpacity>
           </View>
         </View>
@@ -1159,7 +1176,7 @@ export default function SettingsScreen() {
           {savedSuccess ? (
             <>
               <CheckCircle2 size={16} color={palette.bgDeep} />
-              <Text style={styles.saveBtnText}>SAVED &amp; ENCRYPTED</Text>
+              <Text style={styles.saveBtnText}>{t('settings.saved', lang)}</Text>
             </>
           ) : (
             <Text style={styles.saveBtnText}>{t('common.save', lang)}</Text>

@@ -51,24 +51,24 @@ class SelfHealingEngine {
 
       store.setStatus('healing');
       store.addTerminalLog(`! RUNTIME REGRESSION DETECTED in ${targetFile}: ${message}`, 'error');
-      store.addTerminalLog('Triggered Anti-Panic Engine CLR synthesizer + AST bands...', 'patch');
+      store.addTerminalLog('Capturing diagnostics and preparing a repair suggestion...', 'patch');
 
       const patchId = this.generatePatchId();
       let fixedCode = '';
-      let fixSource = 'local AST fallback';
+      let fixSource = 'local heuristic';
 
       const apiKey = store.config.geminiApiKey;
       if (apiKey && apiKey.trim().length > 5) {
         try {
-          store.addTerminalLog('Querying Gemini AST synthesizer matrix...', 'cmd');
+          store.addTerminalLog('Requesting a Gemini repair suggestion...', 'cmd');
           const { model } = await resolveModel(apiKey, {});
-          const prompt = `You are the SEVEN Anti-Panic Self-Healing Engine. Fix this buggy code:\n\nTarget: ${targetFile}\nError: ${message}\nCode:\n${originalCode}\n\nReturn ONLY the fixed code without markdown backticks or commentary.`;
+          const prompt = `You are SEVEN Diagnostics. Suggest a fix for this failing code. The suggestion will be reviewed and is NOT applied automatically:\n\nTarget: ${targetFile}\nError: ${message}\nCode:\n${originalCode}\n\nReturn ONLY the fixed code without markdown backticks or commentary.`;
           const result = await model.generateContent(prompt);
           fixedCode = (result.response.text() || '')
             .trim()
             .replace(/^```[a-z]*\n/i, '')
             .replace(/\n```$/i, '');
-          fixSource = 'Gemini AST synthesizer';
+          fixSource = 'Gemini suggestion';
         } catch (geminiErr: any) {
           store.addTerminalLog(`Gemini synthesis fallback: ${geminiErr?.message || geminiErr}`, 'warn');
           fixedCode = this.fallbackAstFix(originalCode, message);
@@ -77,7 +77,7 @@ class SelfHealingEngine {
         fixedCode = this.fallbackAstFix(originalCode, message);
       }
 
-      store.addTerminalLog(`Synthesized atomic hot-patch [ID: ${patchId}] via ${fixSource}`, 'patch');
+      store.addTerminalLog(`Repair suggestion [ID: ${patchId}] recorded via ${fixSource}`, 'patch');
 
       const patchRecord: PatchLog = {
         id: patchId,
@@ -86,9 +86,9 @@ class SelfHealingEngine {
         error: message,
         originalSnippet: originalCode.slice(0, 160) + (originalCode.length > 160 ? '...' : ''),
         fixedSnippet: fixedCode.slice(0, 160) + (fixedCode.length > 160 ? '...' : ''),
-        status: 'applied',
-        engine: `Anti-Panic Engine CLR synthesizer + AST bands (${fixSource})`,
-        synthesizerOutput: `Hot-patch ${patchId} recorded for task "${taskName}". Original failure re-raised to caller.`,
+        status: 'suggested',
+        engine: `SEVEN diagnostics (${fixSource})`,
+        synthesizerOutput: `Diagnostic ${patchId} recorded for task "${taskName}". Suggestion not applied; original failure re-raised.`,
       };
 
       store.addPatchLog(patchRecord);
@@ -98,7 +98,7 @@ class SelfHealingEngine {
         const docDir = storageService.getDocumentDirectory();
         if (docDir) {
           const logPath = `${docDir}patches.log`;
-          const logLine = `[${new Date().toISOString()}] PATCH ${patchId} | TASK: ${taskName} | FILE: ${targetFile} | ERROR: ${message}\n`;
+          const logLine = `[${new Date().toISOString()}] DIAGNOSTIC ${patchId} | TASK: ${taskName} | FILE: ${targetFile} | ERROR: ${message}\n`;
           const existing = await storageService.readAsString(logPath).catch(() => '');
           await storageService.writeAsString(logPath, existing + logLine);
         }
@@ -106,7 +106,7 @@ class SelfHealingEngine {
         console.warn('Failed to write patches.log:', logErr);
       }
 
-      store.addTerminalLog(`Hot-patch ${patchId} recorded. Re-raising original error.`, 'warn');
+      store.addTerminalLog(`Diagnostic ${patchId} recorded; suggestion was not applied. Re-raising original error.`, 'warn');
       store.setStatus('idle');
 
       // Correctness: never fabricate a successful result — propagate the failure.
@@ -125,7 +125,7 @@ class SelfHealingEngine {
     if (errorMsg.includes('addEventListener')) {
       return `if (typeof window !== "undefined") {\n  window.addEventListener("DOMContentLoaded", () => {\n    ${code}\n  });\n}`;
     }
-    return `// Suggested guard by Seven AI Anti-Panic Engine\ntry {\n  ${code}\n} catch (e) {\n  console.warn("Recovered by AST safe wrapper:", e);\n}`;
+    return `// Suggested guard by Seven AI diagnostics\ntry {\n  ${code}\n} catch (e) {\n  console.warn("Suggested diagnostic guard caught:", e);\n}`;
   }
 
   /**
@@ -137,14 +137,14 @@ class SelfHealingEngine {
   }
 
   /**
-   * Trigger a controlled bug simulation to test the Self-Healing Engine.
+   * Trigger a controlled failure to test the diagnostic reporter.
    * The wrapped task intentionally throws; wrapExecution records the patch
    * report and rethrows, which we swallow here (it is the expected outcome).
    */
   public async simulateBugAndAutoFix(): Promise<PatchLog> {
     const store = useSevenStore.getState();
     store.setStatus('healing');
-    store.addTerminalLog('SIMULATION: Injecting runtime AST null-pointer regression...', 'warn');
+    store.addTerminalLog('SIMULATION: Triggering a controlled runtime failure...', 'warn');
 
     await new Promise((r) => setTimeout(r, 600));
 
@@ -175,10 +175,10 @@ filterBtns.forEach(btn => {
     const lastPatch = this.getLastPatch();
     if (!lastPatch) {
       store.setStatus('idle');
-      throw new Error('Self-healing simulation failed to produce a patch record.');
+      throw new Error('Diagnostic simulation failed to produce a report.');
     }
 
-    store.addTerminalLog(`Hot-patch ${lastPatch.id} verified & active [OK]`, 'success');
+    store.addTerminalLog(`Diagnostic ${lastPatch.id} recorded; repair suggestion requires review [OK]`, 'success');
     store.setStatus('idle');
     return lastPatch;
   }

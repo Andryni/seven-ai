@@ -1,3 +1,4 @@
+import { fetchWithTimeout } from './network';
 /**
  * OpenRouter chat completion — the second brain.
  *
@@ -59,7 +60,7 @@ class OpenRouterService {
     const key = apiKey.trim();
     if (!key) return { ok: false, message: 'No key entered' };
     try {
-      const res = await fetch('https://openrouter.ai/api/v1/auth/key', {
+      const res = await fetchWithTimeout('https://openrouter.ai/api/v1/auth/key', {
         headers: { Authorization: `Bearer ${key}` },
       });
       if (res.ok) return { ok: true, message: 'OpenRouter key valid' };
@@ -83,7 +84,7 @@ class OpenRouterService {
     messages: OpenRouterMessage[],
     model: string = DEFAULT_MODEL
   ): Promise<OpenRouterResult> {
-    const res = await fetch(ENDPOINT, {
+    const res = await fetchWithTimeout(ENDPOINT, {
       method: 'POST',
       headers: {
         Authorization: `Bearer ${apiKey}`,

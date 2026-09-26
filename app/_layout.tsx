@@ -20,6 +20,7 @@ import { installWebFonts, NATIVE_FONT_MAP } from '../src/theme/typography';
 import { SandboxExecutorHost } from '../src/components/SandboxExecutorHost';
 import { LaunchSplash } from '../src/components/LaunchSplash';
 import { AppLockScreen } from '../src/components/AppLockScreen';
+import { AppErrorBoundary } from '../src/components/AppErrorBoundary';
 import { useAppLock } from '../src/hooks/useAppLock';
 import { useConditionalRoutines } from '../src/hooks/useConditionalRoutines';
 
@@ -49,6 +50,7 @@ export default function RootLayout() {
   const loadSavedConfig = useSevenStore((s) => s.loadSavedConfig);
   const isInitialized = useSevenStore((s) => s.isInitialized);
   const isConfigured = useSevenStore((s) => s.config.isConfigured);
+  const language = useSevenStore((s) => s.config.language ?? 'en');
   const themeName = useSevenStore((s) => s.config.theme ?? 'seven');
   // Resolves 'auto' against the live OS appearance setting; 'dark'/'light'
   // pin it. Kept out of the store itself so the app never has to persist
@@ -137,7 +139,9 @@ export default function RootLayout() {
     >
       <ThemeProvider themeName={themeName} uiMode={uiMode}>
         <SafeAreaProvider>
-          <RootFrame palette={palette} />
+          <AppErrorBoundary palette={palette} language={language}>
+            <RootFrame palette={palette} />
+          </AppErrorBoundary>
         </SafeAreaProvider>
       </ThemeProvider>
     </ShareIntentProvider>

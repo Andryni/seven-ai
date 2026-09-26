@@ -14,6 +14,8 @@ export interface AssistantConfig {
   city?: string;
   geminiApiKey: string;
   openRouterKey?: string;
+  /** Optional Brave Search API key for general web results. */
+  braveSearchApiKey?: string;
   /** Google Cloud OAuth Client ID (Web application type) for real Gmail access. */
   googleClientId?: string;
   themeColor: string;
@@ -55,6 +57,9 @@ export interface AssistantConfig {
   widgetLayout?: Record<string, { x: number; y: number; size?: 'S' | 'M' | 'L' }>;
   /** Module ids the user removed from the dashboard deck. */
   widgetHidden?: string[];
+  /** Android Storage Access Framework directory selected by the user. The URI
+      grants persistent scoped access without broad storage permissions. */
+  organizerDirectoryUri?: string;
   wakeWordEnabled?: boolean;
   gyroEnabled?: boolean;
   /** Shows a small text caption under icon-only buttons across the app
@@ -259,7 +264,7 @@ export interface PatchLog {
   error: string;
   originalSnippet: string;
   fixedSnippet: string;
-  status: 'applied' | 'verified' | 'rolled_back';
+  status: 'suggested' | 'reported' | 'applied' | 'verified' | 'rolled_back';
   engine: string;
   synthesizerOutput: string;
 }
@@ -293,6 +298,9 @@ export interface ResearchDocument {
   title: string;
   summary: string;
   sections: { heading: string; body: string }[];
+  /** Sources actually retrieved before synthesis. Empty means the document is
+   * an ungrounded draft and the UI/PDF must say so explicitly. */
+  sources?: { title: string; url: string; snippet?: string }[];
   content: string;
   pdfUri: string;
   timestamp: number;

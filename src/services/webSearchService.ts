@@ -1,3 +1,5 @@
+import { fetchWithTimeout } from './network';
+import { useSevenStore } from '../store/useSevenStore';
 export interface SearchResultItem {
   title: string;
   snippet: string;
@@ -19,7 +21,7 @@ async function searchWikipedia(query: string, language: 'fr' | 'en' = 'en'): Pro
     query
   )}&limit=3&format=json&origin=*`;
 
-  const res = await fetch(openSearchUrl);
+  const res = await fetchWithTimeout(openSearchUrl);
   if (!res.ok) return [];
   const data = await res.json();
   // opensearch responds [query, [titles], [descriptions], [urls]]
@@ -32,7 +34,7 @@ async function searchWikipedia(query: string, language: 'fr' | 'en' = 'en'): Pro
   const summaries = await Promise.all(
     titles.slice(0, 3).map(async (title, i) => {
       try {
-        const summaryRes = await fetch(
+        const summaryRes = await fetchWithTimeout(
           `https://${domain}/api/rest_v1/page/summary/${encodeURIComponent(title.replace(/ /g, '_'))}`
         );
         if (!summaryRes.ok) return null;
@@ -50,6 +52,48 @@ async function searchWikipedia(query: string, language: 'fr' | 'en' = 'en'): Pro
   );
 
   return summaries.filter((s): s is SearchResultItem => s !== null);
+}
+
+async function searchBrave(query: string, apiKey: string): Promise<SearchResultItem[]> {
+  if (!apiKey.trim()) return [];
+  const url = `https://api.search.brave.com/res/v1/web/search?q=${encodeURIComponent(query)}&count=6&safesearch=moderate`;
+  const res = await fetchWithTimeout(url, {
+    headers: {
+      Accept: 'application/json',
+      'X-Subscription-Token': apiKey.trim(),
+    },
+  });
+  if (!res.ok) throw new Error(`Brave Search ${res.status}`);
+  const data = await res.json();
+  const results = data?.web?.results;
+  if (!Array.isArray(results)) return [];
+  return results.flatMap((item: any) => {
+    if (typeof item?.url !== 'string' || typeof item?.title !== 'string') return [];
+    return [{
+      title: item.title,
+      snippet: typeof item.description === 'string' ? item.description : '',
+      url: item.url,
+    }];
+  });
+}
+
+/** Crossref adds recent scholarly works and stable DOI links, complementing
+ * encyclopedic Wikipedia and DuckDuckGo's direct-answer index. */
+async function searchCrossref(query: string): Promise<SearchResultItem[]> {
+  const url = `https://api.crossref.org/works?query=${encodeURIComponent(query)}&rows=3&select=DOI,title,abstract,published`;
+  const res = await fetchWithTimeout(url);
+  if (!res.ok) return [];
+  const items = (await res.json())?.message?.items;
+  if (!Array.isArray(items)) return [];
+  return items.flatMap((item: any) => {
+    const title = Array.isArray(item?.title) ? item.title[0] : undefined;
+    const doi = typeof item?.DOI === 'string' ? item.DOI : undefined;
+    if (!title || !doi) return [];
+    const abstract = typeof item.abstract === 'string'
+      ? item.abstract.replace(/<[^>]+>/g, ' ').replace(/\s+/g, ' ').trim()
+      : 'Scholarly work indexed by Crossref.';
+    return [{ title, snippet: abstract.slice(0, 700), url: `https://doi.org/${doi}` }];
+  });
 }
 
 class WebSearchService {
@@ -76,10 +120,19 @@ class WebSearchService {
    */
   public async searchWeb(query: string, language: 'fr' | 'en' = 'en'): Promise<WebSearchResponse> {
     const results: SearchResultItem[] = [];
+    const braveKey = useSevenStore.getState().config.braveSearchApiKey || '';
+
+    if (braveKey) {
+      try {
+        results.push(...(await searchBrave(query, braveKey)));
+      } catch {
+        // Paid/optional provider failure must not break the free fallbacks.
+      }
+    }
 
     try {
       const apiUrl = `https://api.duckduckgo.com/?q=${encodeURIComponent(query)}&format=json&no_html=1&skip_disambig=1`;
-      const response = await fetch(apiUrl);
+      const response = await fetchWithTimeout(apiUrl);
       const data = await response.json();
 
       if (data.AbstractText) {
@@ -105,26 +158,28 @@ class WebSearchService {
       // DuckDuckGo unreachable: Wikipedia below may still answer.
     }
 
-    try {
-      const wiki = await searchWikipedia(query, language);
-      for (const item of wiki) {
+    const secondary = await Promise.allSettled([
+      searchWikipedia(query, language),
+      searchCrossref(query),
+    ]);
+    for (const settled of secondary) {
+      if (settled.status !== 'fulfilled') continue;
+      for (const item of settled.value) {
         if (!results.some((r) => r.url === item.url)) results.push(item);
       }
-    } catch {
-      // Wikipedia unreachable: fall through to whatever DuckDuckGo found.
     }
 
     if (results.length === 0) {
+      // An outbound search URL is not a result and a synthetic snippet is not
+      // evidence. Return an honest empty set so callers can label the answer as
+      // ungrounded instead of presenting invented research as live data.
       return {
         query,
-        results: [
-          {
-            title: `Live Web Search: ${query}`,
-            snippet: `Synthesized live research on ${query} via neural web matrix.`,
-            url: `https://duckduckgo.com/?q=${encodeURIComponent(query)}`,
-          },
-        ],
-        summary: `Web search for "${query}" initiated. Intelligence matrix queried.`,
+        results: [],
+        summary:
+          language === 'fr'
+            ? `Aucune source vérifiable trouvée pour « ${query} ».`
+            : `No verifiable source was found for “${query}”.`,
       };
     }
 

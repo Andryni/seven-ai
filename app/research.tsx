@@ -1,12 +1,14 @@
 import React, { useState } from 'react';
-import { FONT } from '../src/theme/typography';
+import { useTheme, useThemeStyles } from '../src/theme/theme';
+import { researchStyles } from '../src/theme/researchStyles';
+import { t } from '../src/theme/i18n';
 import {
   View,
   Text,
-  StyleSheet,
   TextInput,
   TouchableOpacity,
   ScrollView,
+  Linking,
 } from 'react-native';
 import { useRouter } from 'expo-router';
 import { useSevenStore } from '../src/store/useSevenStore';
@@ -39,7 +41,10 @@ const PRESET_TOPICS = [
 
 export default function ResearchScreen() {
   const router = useRouter();
+  const palette = useTheme();
+  const styles = useThemeStyles(researchStyles);
   const researchDocs = useSevenStore((s) => s.researchDocs);
+  const lang = useSevenStore((s) => s.config.language ?? 'en');
   const addTerminalLog = useSevenStore((s) => s.addTerminalLog);
 
   const [topic, setTopic] = useState('research on AI and create a PDF');
@@ -85,13 +90,13 @@ export default function ResearchScreen() {
           accessibilityLabel="Dashboard"
           onPress={() => router.push('/')}
         >
-          <ChevronLeft size={16} color="#FFD700" />
+          <ChevronLeft size={16} color={palette.accent} />
           <Text style={styles.backBtnText}>DASHBOARD</Text>
         </TouchableOpacity>
 
         <View style={styles.titleWrap}>
-          <FileText size={15} color="#FFD700" />
-          <Text style={styles.titleText}>RESEARCH TO PDF COMPILER</Text>
+          <FileText size={15} color={palette.accent} />
+          <Text style={styles.titleText}>{t('research.title', lang)}</Text>
         </View>
 
         <View style={styles.placeholderRight} />
@@ -103,8 +108,8 @@ export default function ResearchScreen() {
         <ScreenReveal index={1}>
         <View style={styles.inputDeck}>
           <View style={styles.labelRow}>
-            <Sparkles size={13} color="#FFD700" />
-            <Text style={styles.deckLabel}>INTELLIGENCE RESEARCH DIRECTIVE</Text>
+            <Sparkles size={13} color={palette.accent} />
+            <Text style={styles.deckLabel}>{t('research.topic', lang)}</Text>
           </View>
 
           <View style={styles.inputRow}>
@@ -112,8 +117,8 @@ export default function ResearchScreen() {
               style={styles.textInput}
               value={topic}
               onChangeText={setTopic}
-              placeholder="e.g. research on AI and create a PDF"
-              placeholderTextColor="rgba(255,255,255,0.3)"
+              placeholder={t('research.placeholder', lang)}
+              placeholderTextColor={palette.textFaint}
             />
             <TouchableOpacity
               style={[styles.compileBtn, isSynthesizing && styles.btnLoading]}
@@ -121,11 +126,11 @@ export default function ResearchScreen() {
               onPress={() => handleResearch()}
               disabled={isSynthesizing}
             >
-              <Play size={14} color="#050508" />
+              <Play size={14} color={palette.bgDeep} />
               <Text style={styles.compileText}>
-                {isSynthesizing ? 'COMPILING' : 'GENERATE PDF'}
+                {isSynthesizing ? t('research.compiling', lang) : t('research.generate', lang)}
               </Text>
-              {isSynthesizing && <TypingDots color="#050508" size={4} />}
+              {isSynthesizing && <TypingDots color={palette.bgDeep} size={4} />}
             </TouchableOpacity>
           </View>
 
@@ -164,7 +169,7 @@ export default function ResearchScreen() {
           <View style={styles.docCard}>
             <View style={styles.docCardHeader}>
               <View style={styles.docHeaderLeft}>
-                <BookOpen size={16} color="#FFD700" />
+                <BookOpen size={16} color={palette.accent} />
                 <View>
                   <Text style={styles.docTitleText}>{currentDoc.title}</Text>
                   <Text style={styles.docMetaText}>
@@ -174,14 +179,14 @@ export default function ResearchScreen() {
               </View>
 
               <View style={styles.pdfReadyBadge}>
-                <CheckCircle2 size={11} color="#00FFA3" />
-                <Text style={styles.pdfReadyText}>PDF COMPILED</Text>
+                <CheckCircle2 size={11} color={palette.success} />
+                <Text style={styles.pdfReadyText}>{t('research.ready', lang)}</Text>
               </View>
             </View>
 
             {/* Document Executive Summary */}
             <View style={styles.summaryBox}>
-              <Text style={styles.summaryLabel}>EXECUTIVE BRIEFING SUMMARY</Text>
+              <Text style={styles.summaryLabel}>{t('research.summary', lang)}</Text>
               <Text style={styles.summaryBody}>{currentDoc.summary}</Text>
             </View>
 
@@ -195,6 +200,28 @@ export default function ResearchScreen() {
               ))}
             </View>
 
+            <View style={styles.sourcesBox}>
+              <Text style={styles.summaryLabel}>
+                {currentDoc.sources?.length
+                  ? `${t('research.sources', lang)} (${currentDoc.sources.length})`
+                  : t('research.unverified', lang)}
+              </Text>
+              {currentDoc.sources?.length ? (
+                currentDoc.sources.map((source, index) => (
+                  <TouchableOpacity
+                    key={`${source.url}-${index}`}
+                    accessibilityRole="link"
+                    accessibilityLabel={`Open source ${index + 1}: ${source.title}`}
+                    onPress={() => Linking.openURL(source.url).catch(() => {})}
+                  >
+                    <Text style={styles.sourceLink}>[{index + 1}] {source.title}</Text>
+                  </TouchableOpacity>
+                ))
+              ) : (
+                <Text style={styles.sectionBody}>{t('research.noSources', lang)}</Text>
+              )}
+            </View>
+
             {/* Action Bar */}
             <View style={styles.docActions}>
               <TouchableOpacity
@@ -202,8 +229,8 @@ export default function ResearchScreen() {
                 accessibilityLabel="Share / export PDF"
                 onPress={() => handleShare(currentDoc)}
               >
-                <Share2 size={14} color="#050508" />
-                <Text style={styles.shareBtnText}>SHARE / EXPORT PDF</Text>
+                <Share2 size={14} color={palette.bgDeep} />
+                <Text style={styles.shareBtnText}>{t('research.share', lang)}</Text>
               </TouchableOpacity>
 
               <TouchableOpacity
@@ -211,8 +238,8 @@ export default function ResearchScreen() {
                 accessibilityLabel="View in PDF viewer"
                 onPress={() => handleShare(currentDoc)}
               >
-                <ExternalLink size={14} color="#FFD700" />
-                <Text style={styles.openBtnText}>VIEW IN PDF VIEWER</Text>
+                <ExternalLink size={14} color={palette.accent} />
+                <Text style={styles.openBtnText}>{t('research.open', lang)}</Text>
               </TouchableOpacity>
             </View>
           </View>
@@ -226,259 +253,3 @@ export default function ResearchScreen() {
     </ParticleBackground>
   );
 }
-
-const styles = StyleSheet.create({
-  topNav: {
-    flexDirection: 'row',
-    alignItems: 'center',
-    justifyContent: 'space-between',
-    paddingHorizontal: 12,
-    paddingVertical: 8,
-    backgroundColor: 'rgba(5, 5, 8, 0.95)',
-    borderBottomWidth: 1,
-    borderBottomColor: 'rgba(255, 215, 0, 0.2)',
-  },
-  backBtn: {
-    flexDirection: 'row',
-    alignItems: 'center',
-    gap: 3,
-  },
-  backBtnText: {
-    fontFamily: FONT.mono,
-    color: '#FFD700',
-    fontSize: 9.5,
-    fontWeight: '700',
-  },
-  titleWrap: {
-    flexDirection: 'row',
-    alignItems: 'center',
-    gap: 6,
-  },
-  titleText: {
-    fontFamily: FONT.mono,
-    color: '#FFF',
-    fontSize: 11,
-    fontWeight: '800',
-    letterSpacing: 1,
-  },
-  placeholderRight: {
-    width: 60,
-  },
-  scrollArea: {
-    flex: 1,
-  },
-  scrollContent: {
-    paddingHorizontal: 12,
-    paddingTop: 12,
-    paddingBottom: 40,
-  },
-  inputDeck: {
-    backgroundColor: 'rgba(10, 10, 16, 0.9)',
-    borderRadius: 8,
-    borderWidth: 1,
-    borderColor: 'rgba(255, 215, 0, 0.35)',
-    padding: 12,
-    marginBottom: 10,
-  },
-  labelRow: {
-    flexDirection: 'row',
-    alignItems: 'center',
-    gap: 6,
-    marginBottom: 8,
-  },
-  deckLabel: {
-    fontFamily: FONT.mono,
-    color: '#FFD700',
-    fontSize: 10,
-    fontWeight: '800',
-    letterSpacing: 1,
-  },
-  inputRow: {
-    flexDirection: 'row',
-    gap: 8,
-  },
-  textInput: {
-    flex: 1,
-    backgroundColor: 'rgba(0, 0, 0, 0.7)',
-    borderWidth: 1,
-    borderColor: 'rgba(255, 215, 0, 0.3)',
-    borderRadius: 4,
-    paddingHorizontal: 10,
-    paddingVertical: 8,
-    color: '#FFF',
-    fontFamily: FONT.mono,
-    fontSize: 11.5,
-  },
-  compileBtn: {
-    flexDirection: 'row',
-    alignItems: 'center',
-    backgroundColor: '#FFD700',
-    paddingHorizontal: 12,
-    borderRadius: 4,
-    gap: 5,
-  },
-  btnLoading: {
-    opacity: 0.6,
-  },
-  compileText: {
-    fontFamily: FONT.mono,
-    color: '#050508',
-    fontSize: 10,
-    fontWeight: '900',
-    letterSpacing: 0.5,
-  },
-  presetScroll: {
-    marginTop: 10,
-  },
-  presetContainer: {
-    gap: 6,
-  },
-  presetChip: {
-    backgroundColor: 'rgba(255, 215, 0, 0.08)',
-    borderWidth: 1,
-    borderColor: 'rgba(255, 215, 0, 0.25)',
-    paddingHorizontal: 8,
-    paddingVertical: 4,
-    borderRadius: 3,
-  },
-  presetText: {
-    fontFamily: FONT.mono,
-    color: 'rgba(255, 255, 255, 0.75)',
-    fontSize: 9.5,
-  },
-  docCard: {
-    backgroundColor: 'rgba(10, 10, 16, 0.95)',
-    borderRadius: 8,
-    borderWidth: 1,
-    borderColor: 'rgba(255, 215, 0, 0.3)',
-    padding: 14,
-    marginTop: 10,
-  },
-  docCardHeader: {
-    flexDirection: 'row',
-    justifyContent: 'space-between',
-    alignItems: 'center',
-    marginBottom: 12,
-  },
-  docHeaderLeft: {
-    flexDirection: 'row',
-    alignItems: 'center',
-    gap: 10,
-    flex: 1,
-  },
-  docTitleText: {
-    fontFamily: FONT.mono,
-    color: '#FFD700',
-    fontSize: 12,
-    fontWeight: '800',
-    letterSpacing: 0.5,
-  },
-  docMetaText: {
-    fontFamily: FONT.mono,
-    color: 'rgba(255, 255, 255, 0.45)',
-    fontSize: 8.5,
-    marginTop: 2,
-  },
-  pdfReadyBadge: {
-    flexDirection: 'row',
-    alignItems: 'center',
-    gap: 4,
-    backgroundColor: 'rgba(0, 255, 163, 0.15)',
-    paddingHorizontal: 6,
-    paddingVertical: 3,
-    borderRadius: 3,
-    borderWidth: 1,
-    borderColor: '#00FFA3',
-  },
-  pdfReadyText: {
-    fontFamily: FONT.mono,
-    color: '#00FFA3',
-    fontSize: 8.5,
-    fontWeight: '800',
-  },
-  summaryBox: {
-    backgroundColor: 'rgba(0, 229, 255, 0.06)',
-    borderLeftWidth: 3,
-    borderLeftColor: '#00E5FF',
-    padding: 10,
-    borderRadius: 4,
-    marginBottom: 12,
-  },
-  summaryLabel: {
-    fontFamily: FONT.mono,
-    color: '#00E5FF',
-    fontSize: 9.5,
-    fontWeight: '800',
-    marginBottom: 4,
-  },
-  summaryBody: {
-    fontFamily: FONT.mono,
-    color: '#E0F7FA',
-    fontSize: 10.5,
-    lineHeight: 15,
-  },
-  sectionsList: {
-    gap: 10,
-    marginBottom: 14,
-  },
-  sectionItem: {
-    backgroundColor: 'rgba(255, 255, 255, 0.03)',
-    padding: 10,
-    borderRadius: 4,
-    borderWidth: 1,
-    borderColor: 'rgba(255, 255, 255, 0.06)',
-  },
-  sectionHeading: {
-    fontFamily: FONT.mono,
-    color: '#FFF',
-    fontSize: 11,
-    fontWeight: '700',
-    marginBottom: 4,
-  },
-  sectionBody: {
-    fontFamily: FONT.mono,
-    color: 'rgba(255, 255, 255, 0.7)',
-    fontSize: 10,
-    lineHeight: 14,
-  },
-  docActions: {
-    flexDirection: 'row',
-    gap: 10,
-  },
-  shareBtn: {
-    flex: 1,
-    flexDirection: 'row',
-    alignItems: 'center',
-    justifyContent: 'center',
-    backgroundColor: '#FFD700',
-    paddingVertical: 9,
-    borderRadius: 4,
-    gap: 6,
-  },
-  shareBtnText: {
-    fontFamily: FONT.mono,
-    color: '#050508',
-    fontSize: 10,
-    fontWeight: '900',
-    letterSpacing: 0.5,
-  },
-  openBtn: {
-    flex: 1,
-    flexDirection: 'row',
-    alignItems: 'center',
-    justifyContent: 'center',
-    backgroundColor: 'rgba(255, 215, 0, 0.1)',
-    borderWidth: 1,
-    borderColor: '#FFD700',
-    paddingVertical: 9,
-    borderRadius: 4,
-    gap: 6,
-  },
-  openBtnText: {
-    fontFamily: FONT.mono,
-    color: '#FFD700',
-    fontSize: 10,
-    fontWeight: '800',
-    letterSpacing: 0.5,
-  },
-});

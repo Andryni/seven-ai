@@ -2,6 +2,8 @@ import { useSevenStore } from '../store/useSevenStore';
 import { FileCategory, OrganizeFile, OrganizeResult } from '../types';
 import { selfHealing } from '../core/selfHealing';
 import { storageService } from './storageService';
+import * as FileSystem from 'expo-file-system/legacy';
+import { Platform } from 'react-native';
 
 const EXTENSION_CATEGORIES: Record<string, FileCategory> = {
   // Images
@@ -70,36 +72,118 @@ class FileOrganizerService {
     return FileOrganizerService.instance;
   }
 
-  /**
-   * Initializes downloads folder with realistic files if empty
-   */
+  public usesPublicDirectory(): boolean {
+    return Platform.OS === 'android' && !!useSevenStore.getState().config.organizerDirectoryUri;
+  }
+
+  /** Lets the user grant scoped access to the real Android Downloads (or any
+   * chosen) directory. No broad MANAGE_EXTERNAL_STORAGE permission is used. */
+  public async selectPublicDirectory(): Promise<{ granted: boolean; uri?: string }> {
+    if (Platform.OS !== 'android') return { granted: false };
+    const permission = await FileSystem.StorageAccessFramework.requestDirectoryPermissionsAsync();
+    if (!permission.granted) return { granted: false };
+    await useSevenStore.getState().setConfig({ organizerDirectoryUri: permission.directoryUri });
+    useSevenStore.getState().addTerminalLog('Public directory access granted through Android SAF.', 'success');
+    return { granted: true, uri: permission.directoryUri };
+  }
+
+  public async usePrivateSandbox(): Promise<void> {
+    await useSevenStore.getState().setConfig({ organizerDirectoryUri: undefined });
+  }
+
+  private safName(uri: string): string {
+    try {
+      const decoded = decodeURIComponent(uri);
+      return decoded.slice(decoded.lastIndexOf('/') + 1).split(':').pop() || decoded;
+    } catch {
+      return uri.slice(uri.lastIndexOf('/') + 1);
+    }
+  }
+
+  private async safCopyDelete(from: string, targetDir: string, name: string): Promise<string> {
+    const content = await FileSystem.StorageAccessFramework.readAsStringAsync(from, {
+      encoding: FileSystem.EncodingType.Base64,
+    });
+    const target = await FileSystem.StorageAccessFramework.createFileAsync(
+      targetDir,
+      name,
+      'application/octet-stream'
+    );
+    await FileSystem.StorageAccessFramework.writeAsStringAsync(target, content, {
+      encoding: FileSystem.EncodingType.Base64,
+    });
+    await FileSystem.StorageAccessFramework.deleteAsync(from);
+    return target;
+  }
+
+  /** Creates the app-private organizer directory. It deliberately does not
+   * seed fake files: an empty result must mean “no files”, not a staged demo. */
   public async ensureDownloadsFolder(): Promise<void> {
     try {
       const dirInfo = await storageService.getInfo(this.downloadsDir);
       if (!dirInfo.exists) {
         await storageService.makeDirectory(this.downloadsDir);
       }
-
-      // Check if there are files
-      const files = await storageService.readDirectory(this.downloadsDir);
-      if (files.length === 0) {
-        // Create sample downloads files matching video 02:18
-        const sampleFiles = [
-          { name: 'SEVEN Commander_Resume_2026.pdf', content: '%PDF-1.4 sample resume document' },
-          { name: 'neural_orb_blueprint.png', content: 'PNG_IMAGE_DATA_SAMPLE' },
-          { name: 'seven_core_v3.2.apk', content: 'APK_BINARY_PACKAGE_SAMPLE' },
-          { name: 'quantum_audio_mix.mp3', content: 'MP3_AUDIO_STREAM_SAMPLE' },
-          { name: 'dataset_export_sept.xlsx', content: 'EXCEL_DATASET_SAMPLE' },
-          { name: 'cyber_avatar.jpg', content: 'JPG_IMAGE_DATA_SAMPLE' },
-        ];
-
-        for (const f of sampleFiles) {
-          await storageService.writeAsString(`${this.downloadsDir}${f.name}`, f.content);
-        }
-      }
     } catch (e) {
-      console.warn('Downloads folder init error:', e);
+      console.warn('Organizer sandbox init error:', e);
+      throw e;
     }
+  }
+
+  private async organizePublicDirectory(directoryUri: string): Promise<OrganizeResult> {
+    const store = useSevenStore.getState();
+    const entries = await FileSystem.StorageAccessFramework.readDirectoryAsync(directoryUri);
+    const categoryDirs = new Map<string, string>();
+    const moveList: OrganizeFile[] = [];
+    const categoryCounts: Record<string, number> = {};
+
+    // Existing category directories are reused. SAF returns opaque content URIs,
+    // so the display name is decoded only for classification and UI output.
+    for (const uri of entries) {
+      const name = this.safName(uri);
+      if (Object.values(EXTENSION_CATEGORIES).includes(name as FileCategory) || name === 'Others') {
+        categoryDirs.set(name, uri);
+      }
+    }
+
+    for (const sourceUri of entries) {
+      const name = this.safName(sourceUri);
+      const parts = name.split('.');
+      const ext = parts.length > 1 ? parts.pop()!.toLowerCase() : '';
+      if (!ext) continue; // category directory or extensionless entry
+      const category = EXTENSION_CATEGORIES[ext] || 'Others';
+      let targetDir = categoryDirs.get(category);
+      if (!targetDir) {
+        targetDir = await FileSystem.StorageAccessFramework.makeDirectoryAsync(directoryUri, category);
+        categoryDirs.set(category, targetDir);
+      }
+      const targetUri = await this.safCopyDelete(sourceUri, targetDir, name);
+      moveList.push({
+        id: `file-${Date.now()}-${Math.random().toString(36).slice(2, 6)}`,
+        name,
+        originalPath: sourceUri,
+        newPath: targetUri,
+        category,
+        size: 0,
+        extension: ext,
+      });
+      categoryCounts[category] = (categoryCounts[category] || 0) + 1;
+      store.addTerminalLog(`Moved public file: ${name} -> ${category}/`, 'cmd');
+    }
+
+    const result: OrganizeResult = {
+      id: `org-${Date.now()}`,
+      timestamp: Date.now(),
+      totalFiles: moveList.length,
+      categories: categoryCounts,
+      files: moveList,
+      status: 'active',
+      message: `Organized ${moveList.length} public file(s) through Android scoped storage.`,
+    };
+    await storageService.writeAsString(this.logFilePath, JSON.stringify(result, null, 2));
+    store.setOrganizeResult(result);
+    store.addTerminalLog(result.message, 'success');
+    return result;
   }
 
   /**
@@ -108,8 +192,17 @@ class FileOrganizerService {
   public async organizeDownloads(): Promise<OrganizeResult> {
     const store = useSevenStore.getState();
     store.setStatus('organizing');
-    store.addTerminalLog('Scanning /storage/emulated/0/Download...', 'cmd');
+    const publicUri = Platform.OS === 'android' ? store.config.organizerDirectoryUri : undefined;
+    if (publicUri) {
+      store.addTerminalLog('Scanning user-selected Android directory through SAF...', 'cmd');
+      try {
+        return await this.organizePublicDirectory(publicUri);
+      } finally {
+        store.setStatus('idle');
+      }
+    }
 
+    store.addTerminalLog('Scanning app-private organizer sandbox (/Downloads/)...', 'cmd');
     await this.ensureDownloadsFolder();
 
     return await selfHealing.wrapExecution(
@@ -217,8 +310,15 @@ class FileOrganizerService {
     }
 
     let restored = 0;
+    const publicUri = Platform.OS === 'android' ? store.config.organizerDirectoryUri : undefined;
     for (const f of log.files) {
       try {
+        if (publicUri && f.newPath.startsWith('content://')) {
+          await this.safCopyDelete(f.newPath, publicUri, f.name);
+          restored++;
+          store.addTerminalLog(`Restored public file: ${f.name}`, 'info');
+          continue;
+        }
         const checkCurrent = await storageService.getInfo(f.newPath);
         if (checkCurrent.exists) {
           await storageService.move(f.newPath, f.originalPath);

@@ -23,17 +23,17 @@ describe('fileOrganizer', () => {
     resetFS();
   });
 
-  test('ensureDownloadsFolder seeds sample files when the directory is empty', async () => {
+  test('ensureDownloadsFolder creates an honest empty sandbox', async () => {
     await fileOrganizer.ensureDownloadsFolder();
 
+    const info = await storageService.getInfo(DOWNLOADS);
     const files = await storageService.readDirectory(DOWNLOADS);
-    expect(files.length).toBeGreaterThan(0);
-    expect(files).toContain('SEVEN Commander_Resume_2026.pdf');
+    expect(info.exists).toBe(true);
+    expect(files).toEqual([]);
   }, 15000);
 
   test('organizeDownloads moves files into category subfolders and records the journal', async () => {
-    // Seed BEFORE organizing: a non-empty Downloads folder prevents the
-    // sample-file seeding, keeping the assertions deterministic.
+    // Add real test fixtures; production no longer seeds staged demo files.
     await storageService.writeAsString(`${DOWNLOADS}photo.png`, 'PNGDATA');
     await storageService.writeAsString(`${DOWNLOADS}report.pdf`, 'PDFDATA');
     await storageService.writeAsString(`${DOWNLOADS}app.apk`, 'APKDATA');

@@ -54,7 +54,20 @@ class SandboxService {
    * Prefers the WebView sandbox on native (Hermes-safe), fast path elsewhere.
    */
   public async executeAsync(code: string): Promise<SandboxExecutionResult> {
-    if (Platform.OS !== 'web' && this.webviewExecutor) {
+    // Never run model/user supplied source in the app's browser origin.
+    // `new Function` can always recover `globalThis` (string replacement is
+    // not a security boundary), which would expose the web build's localStorage
+    // and network privileges. Native uses a disposable, CSP-restricted WebView.
+    if (Platform.OS === 'web') {
+      return {
+        success: false,
+        error: 'Code execution is disabled on Web for security. Use the Android or iOS app sandbox.',
+        logs: [],
+        executionTimeMs: 0,
+      };
+    }
+
+    if (this.webviewExecutor) {
       try {
         return await this.webviewExecutor(code);
       } catch (e: any) {
@@ -66,7 +79,13 @@ class SandboxService {
         };
       }
     }
-    return this.execute(code);
+
+    return {
+      success: false,
+      error: 'The isolated code sandbox is not ready yet. Please retry.',
+      logs: [],
+      executionTimeMs: 0,
+    };
   }
 
   /**
@@ -75,6 +94,14 @@ class SandboxService {
    * a clear error result is returned instead of crashing.
    */
   public execute(code: string): SandboxExecutionResult {
+    if (Platform.OS === 'web') {
+      return {
+        success: false,
+        error: 'Code execution is disabled on Web for security.',
+        logs: [],
+        executionTimeMs: 0,
+      };
+    }
     if (!this.hasFastPath()) {
       return {
         success: false,

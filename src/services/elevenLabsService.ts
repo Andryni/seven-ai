@@ -1,3 +1,4 @@
+import { fetchWithTimeout } from './network';
 import { playRemoteAudio, stopPlaybackAudio } from './audioPlayback';
 
 export interface ElevenLabsVoiceOptions {
@@ -44,7 +45,7 @@ class ElevenLabsService {
     await this.stopAudio();
 
     try {
-      const response = await fetch(`https://api.elevenlabs.io/v1/text-to-speech/${voiceId}`, {
+      const response = await fetchWithTimeout(`https://api.elevenlabs.io/v1/text-to-speech/${voiceId}`, {
         method: 'POST',
         headers: {
           'xi-api-key': apiKey.trim(),

@@ -1,4 +1,6 @@
-# 🚀 SEVEN AI (v3.2.0) — Documentation Complète des Améliorations & Nouvelles Fonctionnalités
+# 🚀 SEVEN AI (historique v3.2.0) — Journal des améliorations
+
+> **Archive historique :** ce document décrit les intentions et changements de la v3.2 et n'est pas une spécification produit actuelle. Certaines formulations marketing (coût, sandbox, auto-réparation, accès fichiers) sont obsolètes. La matrice d'honnêteté du `README.md` fait foi pour la v3.3.0.
 
 > **Projet** : SEVEN AI (anciennement Ultron / Brahma Echo)  
 > **Framework & Moteur** : React Native & Expo **SDK 57** (Android / iOS / Web)  
