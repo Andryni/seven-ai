@@ -31,7 +31,7 @@ shaders, real OAuth, DM scraping and self-healing that did not exist).
 | Morning briefing | ⚠️ Weather/battery are placeholders • ✅ **Daily 08:00 local notification** (expo-notifications, toggle in Settings) |
 | **Automation routines** | ✅ Real, on-device automation engine (Routines screen). `daily`/`weekly`/`once` schedule a real OS local notification ahead of time via `expo-notifications`. `battery_low`/`calendar_soon`/`wifi_connect` are **live conditions checked only while the app is in the foreground** (no background-task infra exists in this app) — they fire an immediate real notification + run the action the moment the condition is met, or on returning to the foreground, never invisibly |
 | **Long-term memory** | ✅ Real — permanent notes (Settings) injected into every agent request. Separately, a dedicated **Memory screen** lists, searches, edits and deletes every individual fact the agent remembered via `remember_fact` (its own on-device JSON store, `memoryService`) — add one manually there too. "Forget everything" wipes both stores |
-| **Theming & i18n** | ⚠️ 3 accent palettes × dark/light and a shared FR/EN dictionary. Core navigation/chat/history/memory/routines and Research are translated; some advanced HUD/settings copy is still English and is being migrated. |
+| **Theming & i18n** | ✅ 3 accent palettes × dark/light and a shared FR/EN dictionary across core navigation, chat, history, memory, routines, Organizer, Research, Settings and diagnostics. Product names and technical identifiers intentionally remain unchanged. |
 | **Haptics & offline queue** | ✅ Haptic feedback on all key actions; commands typed offline are queued and flushed on reconnect |
 
 ## Setup
