@@ -69,6 +69,7 @@ let liveSession: LiveSession | null = null;
  * once; without global ownership each hook could start its own TTS engine. */
 let activeSpeechTurn = 0;
 let activeSpeechOwner: symbol | null = null;
+let resetActiveSpeechUi: (() => void) | null = null;
 
 /**
  * True while *any* screen holds the microphone.
@@ -229,6 +230,7 @@ export const useVoice = () => {
       if (activeSpeechOwner === owner) {
         activeSpeechTurn += 1;
         activeSpeechOwner = null;
+        resetActiveSpeechUi = null;
         void fishAudioService.stopAudio();
         void Speech.stop();
       }
@@ -304,8 +306,22 @@ export const useVoice = () => {
         return;
       }
 
+      // Reset the visual state owned by another mounted useVoice instance
+      // (for example the dashboard underneath a briefing modal).
+      resetActiveSpeechUi?.();
+      const resetLocalUi = () => {
+        if (!mountedRef.current) return;
+        setIsSpeaking(false);
+        setIsAudible(false);
+        setSpokenText('');
+        setSpeechPositionMs(undefined);
+        setSpeechDurationMs(undefined);
+        stopAmplitudeAnimation();
+      };
+
       const turn = ++activeSpeechTurn;
       activeSpeechOwner = ownerRef.current;
+      resetActiveSpeechUi = resetLocalUi;
       const isCurrentTurn = () =>
         turn === activeSpeechTurn && activeSpeechOwner === ownerRef.current;
 
@@ -334,12 +350,8 @@ export const useVoice = () => {
       const finish = () => {
         if (!isCurrentTurn()) return;
         activeSpeechOwner = null;
-        setIsSpeaking(false);
-        setIsAudible(false);
-        setSpokenText('');
-        setSpeechPositionMs(undefined);
-        setSpeechDurationMs(undefined);
-        stopAmplitudeAnimation();
+        resetActiveSpeechUi = null;
+        resetLocalUi();
         setStatus('idle');
       };
 
@@ -489,6 +501,8 @@ export const useVoice = () => {
   const stopSpeaking = useCallback(async () => {
     activeSpeechTurn += 1;
     activeSpeechOwner = null;
+    resetActiveSpeechUi?.();
+    resetActiveSpeechUi = null;
     try {
       try {
         await fishAudioService.stopAudio();
