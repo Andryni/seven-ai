@@ -1,5 +1,6 @@
 import React, { useEffect, useMemo, useRef, useState } from 'react';
-import { Animated, Easing, StyleSheet, View } from 'react-native';
+import { Animated, Easing, Platform, StyleSheet, View } from 'react-native';
+import { Accelerometer } from 'expo-sensors';
 import Svg, {
   Circle,
   ClipPath,
@@ -40,6 +41,8 @@ interface GideonAvatarProps {
   speechText?: string;
   /** TTS rate (0.5 – 2.0) used to time the visemes. */
   speechRate?: number;
+  /** Enables subtle device-parallax so the projected head has physical depth. */
+  gyroEnabled?: boolean;
   /**
    * Transient expression layered over the status: `happy` flashes a smile
    * after an action lands, `alert` stiffens him after a failure. Left out,
@@ -67,6 +70,7 @@ export const GideonAvatar: React.FC<GideonAvatarProps> = ({
   themeColor = '#00E5FF',
   speechText = '',
   speechRate = 1,
+  gyroEnabled = true,
   mood = null,
 }) => {
   /** viewBox unit (0–200) → device pixels. */
@@ -114,10 +118,43 @@ export const GideonAvatar: React.FC<GideonAvatarProps> = ({
   const alertness = useMemo(() => new Animated.Value(0), []);
   const irisLookY = useMemo(() => new Animated.Value(0), []);
 
+  // Physical depth: the entire projection follows the device by a few degrees,
+  // while the perspective transform makes the silhouette read as a volume
+  // rather than a stack of flat SVG paths.
+  const tiltX = useMemo(() => new Animated.Value(0), []);
+  const tiltY = useMemo(() => new Animated.Value(0), []);
+
   // Mouth (viseme driven).
   const mouthOpen = useMemo(() => new Animated.Value(VISEME_SHAPES.rest.open), []);
   const mouthWidth = useMemo(() => new Animated.Value(VISEME_SHAPES.rest.width), []);
   const lipFull = useMemo(() => new Animated.Value(VISEME_SHAPES.rest.full), []);
+
+  useEffect(() => {
+    if (!gyroEnabled || reduceMotion || Platform.OS === 'web') {
+      tiltX.setValue(0);
+      tiltY.setValue(0);
+      return;
+    }
+
+    Accelerometer.setUpdateInterval(80);
+    const subscription = Accelerometer.addListener(({ x, y }) => {
+      Animated.parallel([
+        Animated.spring(tiltY, {
+          toValue: Math.max(-7, Math.min(7, x * 9)),
+          tension: 45,
+          friction: 9,
+          useNativeDriver: true,
+        }),
+        Animated.spring(tiltX, {
+          toValue: Math.max(-5, Math.min(5, -y * 7)),
+          tension: 45,
+          friction: 9,
+          useNativeDriver: true,
+        }),
+      ]).start();
+    });
+    return () => subscription.remove();
+  }, [gyroEnabled, reduceMotion, tiltX, tiltY]);
 
   // Materialization on mount.
   useEffect(() => {
@@ -417,8 +454,10 @@ export const GideonAvatar: React.FC<GideonAvatarProps> = ({
   useEffect(() => {
     const animateTo = (viseme: VisemeId, durationMs: number) => {
       const shape = VISEME_SHAPES[viseme];
-      const duration = Math.max(45, Math.min(durationMs, 420));
-      const easing = Easing.inOut(Easing.quad);
+      // Land on the phoneme near its onset, then hold it for the rest of the
+      // frame. Animating for the full frame made the mouth one phoneme late.
+      const duration = Math.max(28, Math.min(durationMs * 0.36, 95));
+      const easing = Easing.out(Easing.cubic);
       Animated.parallel([
         Animated.timing(mouthOpen, { toValue: shape.open, duration, easing, useNativeDriver: false }),
         Animated.timing(mouthWidth, { toValue: shape.width, duration, easing, useNativeDriver: false }),
@@ -437,7 +476,6 @@ export const GideonAvatar: React.FC<GideonAvatarProps> = ({
     const frames = textToVisemes(speechText, { rate: speechRate });
     let cancelled = false;
     const timeouts: ReturnType<typeof setTimeout>[] = [];
-    let tail: ReturnType<typeof setInterval> | null = null;
 
     let elapsed = 0;
     frames.forEach((frame) => {
@@ -450,20 +488,13 @@ export const GideonAvatar: React.FC<GideonAvatarProps> = ({
       elapsed += frame.durationMs;
     });
 
-    // If the real TTS outlasts the estimated timeline (or there is no text at
-    // all, e.g. demo mode), keep articulating instead of freezing mid-word.
-    const tailShapes: VisemeId[] = ['A', 'E', 'O', 'I', 'U', 'L', 'T', 'MBP'];
+    // Close naturally after the final grapheme. The previous implementation
+    // cycled through arbitrary vowels when TTS ran longer than the estimate,
+    // which looked active but no longer matched the spoken words.
     if (elapsed > 0) {
       timeouts.push(
         setTimeout(() => {
-          if (cancelled) return;
-          let index = 0;
-          tail = setInterval(() => {
-            if (cancelled) return;
-            const viseme = tailShapes[index % tailShapes.length];
-            index += 1;
-            animateTo(viseme, 150);
-          }, 155);
+          if (!cancelled) animateTo('rest', 180);
         }, elapsed)
       );
     }
@@ -471,7 +502,6 @@ export const GideonAvatar: React.FC<GideonAvatarProps> = ({
     return () => {
       cancelled = true;
       timeouts.forEach(clearTimeout);
-      if (tail) clearInterval(tail);
     };
   }, [status, speechText, speechRate, mouthOpen, mouthWidth, lipFull]);
 
@@ -489,6 +519,8 @@ export const GideonAvatar: React.FC<GideonAvatarProps> = ({
   // ----------------------------------------------------------- Interpolations
   const bobY = bob.interpolate({ inputRange: [0, 1], outputRange: [0, -size * 0.025] });
   const swayRotate = sway.interpolate({ inputRange: [0, 1], outputRange: ['-0.9deg', '0.9deg'] });
+  const tiltRotateX = tiltX.interpolate({ inputRange: [-8, 8], outputRange: ['-8deg', '8deg'] });
+  const tiltRotateY = tiltY.interpolate({ inputRange: [-8, 8], outputRange: ['-8deg', '8deg'] });
   const bootOpacity = boot;
   const bootScaleY = boot.interpolate({ inputRange: [0, 1], outputRange: [0.82, 1] });
   const bootY = boot.interpolate({ inputRange: [0, 1], outputRange: [size * 0.05, 0] });
@@ -620,6 +652,14 @@ export const GideonAvatar: React.FC<GideonAvatarProps> = ({
     inputRange: [0, 0.18, 0.5],
     outputRange: [0, 0.15, 0.85],
   });
+  const tongueOpacity = mouthOpen.interpolate({
+    inputRange: [0, 0.28, 0.72],
+    outputRange: [0, 0.12, 0.68],
+  });
+  const jawDrop = mouthOpen.interpolate({
+    inputRange: [0, 1],
+    outputRange: [0, px(2.8)],
+  });
   const lipSeamOpacity = mouthOpen.interpolate({
     inputRange: [0, 0.22],
     outputRange: [0.6, 0],
@@ -664,7 +704,12 @@ export const GideonAvatar: React.FC<GideonAvatarProps> = ({
         {
           width: size,
           height: size,
-          transform: [{ translateY: bobY }],
+          transform: [
+            { perspective: size * 4.5 },
+            { translateY: bobY },
+            { rotateX: tiltRotateX },
+            { rotateY: tiltRotateY },
+          ],
         },
       ]}
     >
@@ -1290,6 +1335,22 @@ export const GideonAvatar: React.FC<GideonAvatarProps> = ({
               backgroundColor: 'rgba(240,255,255,0.92)',
               opacity: teethOpacity,
               transform: [{ translateY: mouthGapShift }],
+            }}
+          />
+          {/* Tongue catches the lower cavity only on open vowels. It moves with
+              the jaw, adding depth without turning consonants into a flap. */}
+          <Animated.View
+            style={{
+              position: 'absolute',
+              left: lipLeft + px(4),
+              width: lipW - px(8),
+              top: '50%',
+              height: px(3.8),
+              borderTopLeftRadius: px(3),
+              borderTopRightRadius: px(3),
+              backgroundColor: hue.lip,
+              opacity: tongueOpacity,
+              transform: [{ translateY: jawDrop }],
             }}
           />
           {/* Upper lip — a real vermilion border: two peaks, the tubercle dip
