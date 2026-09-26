@@ -126,6 +126,7 @@ export interface ChatMessage {
       | 'research_pdf'
       | 'self_heal'
       | 'web_search'
+      | 'live_info'
       | 'device_action'
       | 'vision'
       | 'document_analyze'

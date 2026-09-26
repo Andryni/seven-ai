@@ -9,6 +9,8 @@ import {
 } from 'expo-audio';
 import { useSevenStore } from '../store/useSevenStore';
 import { fishAudioService, fishVoiceFor } from '../services/fishAudioService';
+import { transcribeSpeechRecording } from '../services/speechTranscriptionService';
+import * as FileSystem from 'expo-file-system/legacy';
 
 /**
  * Native speech recognition is optional, and in expo-speech-recognition v57 its
@@ -125,14 +127,6 @@ const resolveRecognitionLanguage = (
   return uiLanguage === 'fr' ? 'fr-FR' : 'en-US';
 };
 
-const DEMO_COMMANDS = [
-  'make a good developer portfolio website',
-  'organize downloads',
-  'research on AI and create a PDF',
-  'what was the last patch?',
-  'check unread emails',
-];
-
 /** Recorder dB (-60..0) and recogniser volume (-2..10) both land in 0..1. */
 const clamp01 = (value: number): number => Math.min(1, Math.max(0.05, value));
 
@@ -159,12 +153,14 @@ export const useVoice = () => {
   const [spokenText, setSpokenText] = useState('');
   const [speechPositionMs, setSpeechPositionMs] = useState<number | undefined>();
   const [speechDurationMs, setSpeechDurationMs] = useState<number | undefined>();
-  const [voiceMode, setVoiceMode] = useState<'real' | 'demo'>(
-    SPEECH_MODULE ? 'real' : 'demo'
-  );
+  // Both native recognition and the Expo Go cloud-transcription fallback use
+  // the user's real microphone. `demo` is retained only for a genuine startup
+  // failure so older UI call sites remain compatible.
+  const [voiceMode, setVoiceMode] = useState<'real' | 'demo'>('real');
 
   const waveIntervalRef = useRef<ReturnType<typeof setInterval> | null>(null);
-  const demoTimeoutRef = useRef<ReturnType<typeof setTimeout> | null>(null);
+  const captureTimeoutRef = useRef<ReturnType<typeof setTimeout> | null>(null);
+  const finishCloudCaptureRef = useRef<(() => void) | null>(null);
   const listenersRef = useRef<{ remove: () => void }[]>([]);
   const mountedRef = useRef(true);
   /** Stable identity for this hook instance, used as the microphone owner. */
@@ -208,10 +204,11 @@ export const useVoice = () => {
         clearInterval(waveIntervalRef.current);
         waveIntervalRef.current = null;
       }
-      if (demoTimeoutRef.current) {
-        clearTimeout(demoTimeoutRef.current);
-        demoTimeoutRef.current = null;
+      if (captureTimeoutRef.current) {
+        clearTimeout(captureTimeoutRef.current);
+        captureTimeoutRef.current = null;
       }
+      finishCloudCaptureRef.current = null;
       listenersRef.current.forEach((sub) => {
         try {
           sub.remove();
@@ -494,7 +491,6 @@ export const useVoice = () => {
       config.elevenLabsVoiceId,
       setStatus,
       stopAmplitudeAnimation,
-      startSyntheticAmplitude,
     ]
   );
 
@@ -540,9 +536,9 @@ export const useVoice = () => {
       } catch {}
     });
     listenersRef.current = [];
-    if (demoTimeoutRef.current) {
-      clearTimeout(demoTimeoutRef.current);
-      demoTimeoutRef.current = null;
+    if (captureTimeoutRef.current) {
+      clearTimeout(captureTimeoutRef.current);
+      captureTimeoutRef.current = null;
     }
     stopAmplitudeAnimation();
   }, [stopAmplitudeAnimation]);
@@ -898,21 +894,77 @@ export const useVoice = () => {
     ]
   );
 
-  // Demo fallback (surfaced in the UI via voiceMode === 'demo'): a short capture
-  // with a real waveform, then a sample command so the flow stays explorable.
-  const runDemo = useCallback(
-    (onRecognized?: (transcript: string) => void) => {
-      if (demoTimeoutRef.current) clearTimeout(demoTimeoutRef.current);
-      demoTimeoutRef.current = setTimeout(() => {
-        demoTimeoutRef.current = null;
-        if (!mountedRef.current) return;
-        setIsRecording(false);
-        stopAmplitudeAnimation();
-        setStatus('idle');
-        onRecognized?.(DEMO_COMMANDS[Math.floor(Math.random() * DEMO_COMMANDS.length)]);
-      }, 2500);
+  // Expo Go cannot load the optional native recognizer. Record the user's
+  // actual microphone audio and transcribe it with their configured Gemini key
+  // instead of inventing one of a handful of sample commands.
+  const runCloudCapture = useCallback(
+    (
+      owner: symbol,
+      onRecognized?: (transcript: string) => void,
+      onClosed?: () => void
+    ) => {
+      let finishing = false;
+      const finish = () => {
+        if (finishing) return;
+        finishing = true;
+        wantActiveRef.current = false;
+        finishCloudCaptureRef.current = null;
+        if (captureTimeoutRef.current) {
+          clearTimeout(captureTimeoutRef.current);
+          captureTimeoutRef.current = null;
+        }
+
+        void (async () => {
+          const rec = recorderRef.current;
+          let uri: string | null = null;
+          try {
+            if (rec) {
+              await rec.stop();
+              uri = rec.uri;
+            }
+          } catch {
+            // A recorder stopped by the OS has no usable file.
+          }
+
+          if (liveSession?.owner === owner) liveSession = null;
+          stopAmplitudeAnimation();
+          if (mountedRef.current) {
+            setIsRecording(false);
+            setStatus(uri ? 'thinking' : 'idle');
+          }
+
+          let transcript = '';
+          try {
+            if (uri && config.geminiApiKey?.trim()) {
+              transcript = await transcribeSpeechRecording(
+                uri,
+                config.geminiApiKey,
+                resolveRecognitionLanguage(config.voiceLanguage, config.language)
+              );
+            }
+          } catch (error) {
+            console.warn('Cloud speech transcription failed:', error);
+          } finally {
+            if (uri) FileSystem.deleteAsync(uri, { idempotent: true }).catch(() => {});
+          }
+
+          if (!mountedRef.current) return;
+          setStatus('idle');
+          if (transcript) {
+            setPartialTranscript(transcript);
+            onRecognized?.(transcript);
+          } else {
+            onClosed?.();
+          }
+        })();
+      };
+
+      finishCloudCaptureRef.current = finish;
+      // Enough time for a natural command; pressing the mic again submits
+      // sooner. A hard bound prevents an abandoned capture from staying open.
+      captureTimeoutRef.current = setTimeout(finish, 8000);
     },
-    [setStatus, stopAmplitudeAnimation]
+    [config.geminiApiKey, config.language, config.voiceLanguage, setStatus, stopAmplitudeAnimation]
   );
 
   /**
@@ -948,7 +1000,7 @@ export const useVoice = () => {
       setPartialTranscript('');
       setStatus('listening');
 
-      if (SPEECH_MODULE) {
+      if (SPEECH_MODULE && SPEECH_MODULE.isRecognitionAvailable?.() !== false) {
         setVoiceMode('real');
         const started = startNativeCapture(
           (transcript) => onRecognized?.(transcript),
@@ -960,43 +1012,65 @@ export const useVoice = () => {
         );
         if (!started) {
           setVoiceMode('demo');
-          runDemo(onRecognized);
+          options?.onClosed?.();
         }
         return true;
       }
 
-      setVoiceMode('demo');
+      // Cloud fallback is intentionally foreground-only: using it for the
+      // always-on wake-word radar would upload recurring silence recordings.
+      if (priority === 'background' || !config.geminiApiKey?.trim()) {
+        wantActiveRef.current = false;
+        setIsRecording(false);
+        setStatus('idle');
+        options?.onClosed?.();
+        return false;
+      }
+
+      setVoiceMode('real');
       liveSession = {
         owner,
         priority,
         stop: () => {
-          releaseRecorder();
-          if (liveSession?.owner === owner) liveSession = null;
+          finishCloudCaptureRef.current?.();
         },
       };
       void startRecorderAmplitude().then((micOk) => {
-        if (!micOk && mountedRef.current) startSyntheticAmplitude();
+        if (!wantActiveRef.current || liveSession?.owner !== owner) return;
+        if (!micOk) {
+          liveSession = null;
+          setIsRecording(false);
+          setStatus('idle');
+          options?.onClosed?.();
+          return;
+        }
+        runCloudCapture(owner, onRecognized, options?.onClosed);
       });
-      runDemo(onRecognized);
       return true;
     },
     [
-      runDemo,
+      runCloudCapture,
       startNativeCapture,
       startRecorderAmplitude,
-      startSyntheticAmplitude,
-      releaseRecorder,
+      config.geminiApiKey,
       setStatus,
     ]
   );
 
   const stopListening = useCallback(() => {
     wantActiveRef.current = false;
+    // In the Expo Go/cloud path, a second press means “finish and
+    // transcribe”, not “throw the recording away”.
+    if (finishCloudCaptureRef.current) {
+      finishCloudCaptureRef.current();
+      return;
+    }
+
     setIsRecording(false);
     setPartialTranscript('');
-    if (demoTimeoutRef.current) {
-      clearTimeout(demoTimeoutRef.current);
-      demoTimeoutRef.current = null;
+    if (captureTimeoutRef.current) {
+      clearTimeout(captureTimeoutRef.current);
+      captureTimeoutRef.current = null;
     }
 
     const ownerHold = liveSession?.owner === ownerRef.current;
