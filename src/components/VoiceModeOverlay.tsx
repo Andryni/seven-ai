@@ -1,4 +1,4 @@
-import React, { useEffect, useMemo, useRef } from 'react';
+import React, { useEffect, useMemo, useRef, useState } from 'react';
 import { FONT } from '../theme/typography';
 import {
   View,
@@ -9,7 +9,7 @@ import {
   Dimensions,
   StyleSheet,
 } from 'react-native';
-import { X, Loader, Waves } from 'lucide-react-native';
+import { X, Loader, Waves, Mic2, Cpu, Radio, Volume2 } from 'lucide-react-native';
 import Svg, { Circle } from 'react-native-svg';
 import { playChime } from '../services/chime';
 import { OrbView } from './OrbView';
@@ -48,6 +48,7 @@ interface VoiceModeOverlayProps {
   /** Human-readable label of the tool/action currently running, if any. */
   actionLabel?: string | null;
   voiceMode: 'real' | 'demo';
+  voiceEngine?: 'system' | 'fish' | 'elevenlabs';
   language?: 'fr' | 'en';
   onMicPress: () => void;
   onStopSpeaking: () => void;
@@ -364,6 +365,7 @@ export const VoiceModeOverlay: React.FC<VoiceModeOverlayProps> = ({
   sevenText,
   actionLabel,
   voiceMode,
+  voiceEngine = 'system',
   language = 'en',
   onMicPress,
   onStopSpeaking,
@@ -379,6 +381,14 @@ export const VoiceModeOverlay: React.FC<VoiceModeOverlayProps> = ({
   const sweep = useMemo(() => new Animated.Value(0), []);
   const closing = useRef(false);
   const wasRecording = useRef(false);
+  const [elapsedSeconds, setElapsedSeconds] = useState(0);
+
+  useEffect(() => {
+    if (status === 'idle') return;
+    const startedAt = Date.now();
+    const timer = setInterval(() => setElapsedSeconds(Math.floor((Date.now() - startedAt) / 1000)), 1000);
+    return () => clearInterval(timer);
+  }, [status]);
 
   // Boot choreography: chime → surface → rings/corners deploy → orb springs →
   // one hologram sweep. Each layer lands slightly after the previous one so
@@ -477,6 +487,49 @@ export const VoiceModeOverlay: React.FC<VoiceModeOverlayProps> = ({
           <Text style={styles.title}>{t('voice.title', language)}</Text>
         </View>
         <View style={styles.closeBtn} />
+      </View>
+
+      <View style={styles.telemetryDeck}>
+        <View style={styles.telemetryItem}>
+          <Mic2 size={10} color={isRecording ? palette.error : palette.accent} />
+          <Text style={styles.telemetryLabel}>STT</Text>
+          <Text style={styles.telemetryValue}>{voiceMode === 'demo' ? 'UNAVAILABLE' : 'ONLINE'}</Text>
+        </View>
+        <View style={styles.telemetryDivider} />
+        <View style={styles.telemetryItem}>
+          <Cpu size={10} color={palette.info} />
+          <Text style={styles.telemetryLabel}>CORE</Text>
+          <Text style={styles.telemetryValue}>GEMINI</Text>
+        </View>
+        <View style={styles.telemetryDivider} />
+        <View style={styles.telemetryItem}>
+          <Volume2 size={10} color={palette.warning} />
+          <Text style={styles.telemetryLabel}>VOICE</Text>
+          <Text style={styles.telemetryValue}>{voiceEngine.toUpperCase()}</Text>
+        </View>
+        <View style={styles.telemetryDivider} />
+        <View style={styles.telemetryItem}>
+          <Radio size={10} color={palette.success} />
+          <Text style={styles.telemetryLabel}>LINK</Text>
+          <Text style={styles.telemetryValue}>{String(status === 'idle' ? 0 : elapsedSeconds).padStart(2, '0')}S</Text>
+        </View>
+      </View>
+
+      <View style={styles.neuralPipeline}>
+        {(['listening', 'thinking', 'executing', 'speaking'] as const).map((phase, index) => {
+          const current = status === 'building' || status === 'organizing' || status === 'healing' ? 'executing' : status;
+          const activeIndex = ['listening', 'thinking', 'executing', 'speaking'].indexOf(current);
+          const reached = activeIndex >= index;
+          return (
+            <React.Fragment key={phase}>
+              {index > 0 && <View style={[styles.neuralLink, reached && styles.neuralLinkActive]} />}
+              <View style={styles.neuralStep}>
+                <View style={[styles.neuralNode, reached && styles.neuralNodeReached, current === phase && styles.neuralNodeActive]} />
+                <Text style={[styles.neuralText, current === phase && styles.neuralTextActive]}>{phase.toUpperCase()}</Text>
+              </View>
+            </React.Fragment>
+          );
+        })}
       </View>
 
       {/* Avatar stage — the boot rings deploy behind the orb */}
@@ -678,6 +731,32 @@ const voiceStyles = (t: Palette) =>
       alignItems: 'center',
       gap: 7,
     },
+    telemetryDeck: {
+      marginHorizontal: 16,
+      marginTop: 3,
+      paddingVertical: 6,
+      paddingHorizontal: 8,
+      flexDirection: 'row',
+      alignItems: 'center',
+      borderWidth: 1,
+      borderColor: t.border,
+      borderRadius: 6,
+      backgroundColor: 'rgba(0,0,0,.48)',
+    },
+    telemetryItem: { flex: 1, alignItems: 'center', gap: 1 },
+    telemetryDivider: { width: 1, height: 22, backgroundColor: t.border },
+    telemetryLabel: { fontFamily: FONT.mono, color: t.textFaint, fontSize: 5.8, letterSpacing: .8 },
+    telemetryValue: { fontFamily: FONT.mono, color: t.text, fontSize: 7, fontWeight: '800' },
+    neuralPipeline: { marginHorizontal: 26, marginTop: 7, flexDirection: 'row', alignItems: 'flex-start' },
+    neuralStep: { width: 50, alignItems: 'center' },
+    neuralNode: { width: 7, height: 7, borderRadius: 4, borderWidth: 1, borderColor: t.textFaint, backgroundColor: t.bgDeep },
+    neuralNodeReached: { borderColor: t.accent, backgroundColor: t.accentSoft },
+    neuralNodeActive: { width: 9, height: 9, borderRadius: 5, backgroundColor: t.accent, shadowColor: t.accent, shadowOpacity: .9, shadowRadius: 8 },
+    neuralLink: { flex: 1, height: 1, marginTop: 3, backgroundColor: t.border },
+    neuralLinkActive: { backgroundColor: t.accentStrong },
+    neuralText: { marginTop: 3, fontFamily: FONT.mono, color: t.textFaint, fontSize: 5.5 },
+    neuralTextActive: { color: t.accent },
+
     title: {
       fontFamily: FONT.display,
       color: t.accent,

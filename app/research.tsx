@@ -184,6 +184,24 @@ export default function ResearchScreen() {
             </TouchableOpacity>
           </View>
 
+          <View style={styles.researchPipeline}>
+            {[
+              lang === 'fr' ? 'DÉCOMPOSER' : 'DECOMPOSE',
+              lang === 'fr' ? 'ACQUÉRIR' : 'ACQUIRE',
+              lang === 'fr' ? 'VÉRIFIER' : 'VERIFY',
+              lang === 'fr' ? 'SYNTHÉTISER' : 'SYNTHESIZE',
+              'PDF',
+            ].map((step, index) => (
+              <React.Fragment key={step}>
+                {index > 0 && <View style={[styles.researchPipelineLink, (isSynthesizing || currentDoc) && styles.researchPipelineLinkActive]} />}
+                <View style={styles.researchPipelineStep}>
+                  <View style={[styles.researchPipelineNode, (isSynthesizing || currentDoc) && styles.researchPipelineNodeActive]} />
+                  <Text style={styles.researchPipelineText}>{step}</Text>
+                </View>
+              </React.Fragment>
+            ))}
+          </View>
+
           {/* Preset Topics */}
           <ScrollView
             horizontal

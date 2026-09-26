@@ -9,6 +9,7 @@ import {
   Platform,
   Image,
   AccessibilityInfo,
+  Linking,
 } from 'react-native';
 import { useRouter, useLocalSearchParams } from 'expo-router';
 import { useSevenStore } from '../src/store/useSevenStore';
@@ -626,6 +627,9 @@ export default function ChatScreen() {
       case 'open_browser':
         router.push('/dave');
         break;
+      case 'open_source':
+        if (payload?.url) await Linking.openURL(payload.url);
+        break;
       case 'undo_organize':
         handleSend('undo last organization');
         break;
@@ -1009,6 +1013,7 @@ export default function ChatScreen() {
           sevenText={lastSevenText}
           actionLabel={currentAction}
           voiceMode={voiceMode}
+          voiceEngine={config.voiceEngine || 'system'}
           language={config.language || 'en'}
           onMicPress={handleMicToggle}
           onStopSpeaking={stopSpeaking}

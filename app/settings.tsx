@@ -376,6 +376,19 @@ export default function SettingsScreen() {
       </View>
 
       <ScrollView style={styles.scrollArea} contentContainerStyle={styles.scrollContent}>
+        <View style={styles.engineeringDeck}>
+          <View style={styles.engineeringHeader}>
+            <Monitor size={16} color={palette.accent} />
+            <View><Text style={styles.engineeringKicker}>SEVEN // ENGINEERING DECK</Text><Text style={styles.engineeringTitle}>{lang === 'fr' ? 'CONTRÔLE SYSTÈME TOTAL' : 'TOTAL SYSTEM CONTROL'}</Text></View>
+          </View>
+          <View style={styles.engineeringMetrics}>
+            <View style={styles.engineeringMetric}><Brain size={14} color={geminiApiKey ? palette.success : palette.error} /><Text style={styles.engineeringValue}>{geminiApiKey ? 'ONLINE' : 'OFFLINE'}</Text><Text style={styles.engineeringLabel}>COGNITIVE CORE</Text></View>
+            <View style={styles.engineeringMetric}><Volume2 size={14} color={voiceEnabled ? palette.success : palette.warning} /><Text style={styles.engineeringValue}>{voiceEngine.toUpperCase()}</Text><Text style={styles.engineeringLabel}>VOICE ENGINE</Text></View>
+            <View style={styles.engineeringMetric}><Bell size={14} color={briefingEnabled ? palette.success : palette.textFaint} /><Text style={styles.engineeringValue}>{briefingEnabled ? 'ARMED' : 'STANDBY'}</Text><Text style={styles.engineeringLabel}>BRIEFING LINK</Text></View>
+            <View style={styles.engineeringMetric}><ShieldCheck size={14} color={palette.info} /><Text style={styles.engineeringValue}>{patchLogs.length}</Text><Text style={styles.engineeringLabel}>PATCH RECORDS</Text></View>
+          </View>
+        </View>
+
         {/* Section 0: Appearance */}
         <Text style={styles.sectionHeading}>{t('settings.appearance', lang).toUpperCase()}</Text>
         <View style={styles.card}>
@@ -1442,6 +1455,14 @@ const settingsStyles = (t: Palette) =>
       paddingTop: 12,
       paddingBottom: 40,
     },
+    engineeringDeck: { borderWidth: 1, borderColor: t.borderStrong, borderRadius: 11, backgroundColor: 'rgba(3,10,20,.94)', padding: 12, marginBottom: 8 },
+    engineeringHeader: { flexDirection: 'row', alignItems: 'center', gap: 8, paddingBottom: 9, borderBottomWidth: 1, borderBottomColor: t.border },
+    engineeringKicker: { color: t.accent, fontFamily: FONT.mono, fontSize: 7, letterSpacing: 1.2 },
+    engineeringTitle: { color: t.text, fontFamily: FONT.display, fontSize: 12, marginTop: 2 },
+    engineeringMetrics: { flexDirection: 'row', gap: 5, marginTop: 9 },
+    engineeringMetric: { flex: 1, minHeight: 66, alignItems: 'center', justifyContent: 'center', borderWidth: 1, borderColor: t.border, borderRadius: 6, backgroundColor: t.accentSoft, padding: 5 },
+    engineeringValue: { color: t.text, fontFamily: FONT.display, fontSize: 8, marginTop: 5 },
+    engineeringLabel: { color: t.textFaint, fontFamily: FONT.mono, fontSize: 5.2, marginTop: 3, textAlign: 'center' },
     sectionHeading: {
       fontFamily: FONT.mono,
       color: t.accent,

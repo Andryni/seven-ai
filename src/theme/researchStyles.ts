@@ -103,6 +103,13 @@ export const researchStyles = (palette: Palette) => ({
     fontWeight: '900',
     letterSpacing: 0.5,
   },
+  researchPipeline: { flexDirection: 'row', alignItems: 'flex-start', marginTop: 13, padding: 9, borderWidth: 1, borderColor: palette.border, borderRadius: 7, backgroundColor: palette.bgDeep },
+  researchPipelineStep: { width: 50, alignItems: 'center' },
+  researchPipelineNode: { width: 7, height: 7, borderRadius: 4, borderWidth: 1, borderColor: palette.textFaint },
+  researchPipelineNodeActive: { backgroundColor: palette.accent, borderColor: palette.accent },
+  researchPipelineLink: { flex: 1, height: 1, marginTop: 3, backgroundColor: palette.border },
+  researchPipelineLinkActive: { backgroundColor: palette.accentStrong },
+  researchPipelineText: { color: palette.textFaint, fontFamily: FONT.mono, fontSize: 5.5, marginTop: 4 },
   presetScroll: {
     marginTop: 10,
   },

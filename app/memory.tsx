@@ -216,6 +216,21 @@ export default function MemoryScreen() {
         ListHeaderComponent={
           <ScreenReveal index={1}>
             <Text style={styles.subtitle}>{t('memory.subtitle', lang)}</Text>
+            <View style={styles.cognitiveMap}>
+              <View style={styles.memoryCore}><Brain size={24} color={palette.accent} /><Text style={styles.memoryCoreCount}>{facts.length}</Text></View>
+              {CATEGORIES.map((category, index) => {
+                const count = facts.filter((fact) => fact.category === category).length;
+                return (
+                  <View key={category} style={[styles.memoryNode, [styles.memoryNode0, styles.memoryNode1, styles.memoryNode2, styles.memoryNode3][index]]}>
+                    {categoryIcon(category, palette.accent, 12)}
+                    <Text style={styles.memoryNodeLabel}>{category.toUpperCase()}</Text>
+                    <Text style={styles.memoryNodeCount}>{count}</Text>
+                  </View>
+                );
+              })}
+              <View style={[styles.memoryLink, styles.memoryLinkH]} />
+              <View style={[styles.memoryLink, styles.memoryLinkV]} />
+            </View>
             <View style={styles.searchRow}>
               <Search size={13} color={palette.textFaint} />
               <TextInput
@@ -465,6 +480,16 @@ const memoryStyles = (t: Palette) => ({
   scrollArea: { flex: 1 },
   scrollContent: { paddingHorizontal: 12, paddingTop: 12, paddingBottom: 40 },
   subtitle: { fontFamily: FONT.mono, color: t.textDim, fontSize: 10, lineHeight: 14, marginBottom: 12 },
+  cognitiveMap: { height: 190, marginBottom: 12, borderWidth: 1, borderColor: t.borderStrong, borderRadius: 10, backgroundColor: 'rgba(3,9,18,.92)', position: 'relative', alignItems: 'center', justifyContent: 'center', overflow: 'hidden' },
+  memoryCore: { width: 72, height: 72, borderRadius: 36, borderWidth: 1, borderColor: t.accent, backgroundColor: t.accentSoft, alignItems: 'center', justifyContent: 'center', zIndex: 3 },
+  memoryCoreCount: { color: t.text, fontFamily: FONT.display, fontSize: 12, marginTop: 2 },
+  memoryNode: { position: 'absolute', width: 72, minHeight: 46, borderWidth: 1, borderColor: t.border, borderRadius: 7, backgroundColor: t.bgDeep, alignItems: 'center', justifyContent: 'center', zIndex: 2 },
+  memoryNode0: { left: 10, top: 15 }, memoryNode1: { right: 10, top: 15 }, memoryNode2: { left: 10, bottom: 15 }, memoryNode3: { right: 10, bottom: 15 },
+  memoryNodeLabel: { color: t.textDim, fontFamily: FONT.mono, fontSize: 5.8, marginTop: 2 },
+  memoryNodeCount: { position: 'absolute', right: 5, top: 4, color: t.accent, fontFamily: FONT.display, fontSize: 8 },
+  memoryLink: { position: 'absolute', backgroundColor: t.borderStrong, opacity: .7 },
+  memoryLinkH: { left: 45, right: 45, top: '50%', height: 1 },
+  memoryLinkV: { top: 38, bottom: 38, left: '50%', width: 1 },
   searchRow: {
     flexDirection: 'row',
     alignItems: 'center',
